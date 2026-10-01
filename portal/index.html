@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in | Sypher Solutions Client Portal</title>
+  <meta name="description" content="Confidential client workspace for Sypher Solutions engagements.">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0B2D3B">
+  <link rel="icon" href="../favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" href="../assets/img/favicon-48.png">
+  <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
+  <link rel="preload" href="../assets/fonts/cormorant-garamond-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../assets/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/css/styles.css">
+  <link rel="stylesheet" href="../assets/css/portal.css">
+  <script type="module" src="../assets/js/portal/login.js"></script>
+</head>
+<body class="portal">
+<main id="main" class="login">
+  <section class="login__art" aria-hidden="true">
+    <a class="wordmark wordmark--light" href="../index.html" tabindex="-1"><img class="wordmark__icon" src="../assets/img/sypher-mark-sm.webp" alt="" width="34" height="44"><span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span></a>
+    <p class="login__quote">Every answer brings the picture into <em>focus.</em></p>
+    <p class="login__meta">Confidential client workspace</p>
+  </section>
+  <section class="login__panel">
+    <div class="login__box">
+      <p class="eyebrow">Client Portal</p>
+      <h1>Welcome <em>back.</em></h1>
+      <p class="p-muted">Sign in with the email address Michael invited. We'll send you a secure, one-time link: no password to remember.</p>
+
+      <form class="p-form" id="login-form" novalidate>
+        <div class="p-field">
+          <label for="login-email">Email</label>
+          <input class="p-input" id="login-email" name="email" type="email" autocomplete="email" required>
+        </div>
+        <button class="btn btn--navy" type="submit">Email me a sign-in link
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1 8h13M9 3l5 5-5 5"/></svg>
+        </button>
+        <p class="login__sent" id="login-sent" role="status" hidden></p>
+      </form>
+
+      <div class="login__demo" id="login-demo" hidden>
+        <p class="p-label">Explore the demo</p>
+        <p class="p-muted">The portal isn't connected to a database yet, so it runs on fictional sample data saved only in this browser.</p>
+        <button class="btn btn--gold" type="button" data-demo="client">Enter as a client</button>
+        <button class="btn btn--ghost" type="button" data-demo="admin">Enter as Michael (admin)</button>
+      </div>
+
+      <p class="login__note">Not a client yet? <a class="accent" href="../contact.html">Book a consultation</a> · <a class="accent" href="../index.html">Back to the site</a></p>
+    </div>
+  </section>
+</main>
+</body>
+</html>

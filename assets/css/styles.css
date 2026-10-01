@@ -194,7 +194,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .btn--gold { background: var(--champagne); color: var(--navy); }
 .btn--gold:hover { background: #E2C79C; }
 .btn--navy { background: var(--navy); color: var(--on-dark); }
-.btn--navy:hover { background: var(--teal); }
+.btn--navy:hover { background: #17645F; }
 .btn--outline { border-color: var(--champagne-deep); color: var(--navy); }
 .btn--outline:hover { background: var(--navy); border-color: var(--navy); color: var(--on-dark); }
 .section--dark .btn--outline, .btn--outline-light { border-color: var(--champagne); color: var(--on-dark); }
@@ -239,7 +239,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .nav-toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
 .nav-toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .nav-toggle { display: block; }
   .nav {
     position: fixed; inset: 86px 0 0 0; background: var(--paper);
@@ -826,3 +826,10 @@ html.has-motion .puzzle__progress { display: flex; }
   html.has-motion .puzzle__sub { font-size: 0.98rem; margin-top: 0.8rem; }
   html.has-motion .puzzle__title { font-size: clamp(2.3rem, 10vw, 3rem); }
 }
+
+/* Client Portal link in the site header */
+.nav__portal { display: inline-flex; align-items: center; gap: 0.45rem; font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); font-weight: 450; }
+.nav__portal svg { width: 14px; height: 14px; }
+.nav__portal:hover { color: var(--teal); }
+@media (max-width: 1180px) { .nav__portal { font-size: 0.75rem; } }
+.nav__link, .nav__portal, .nav__cta { white-space: nowrap; }

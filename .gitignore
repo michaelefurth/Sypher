@@ -1,2 +1,5 @@
 node_modules/
 .DS_Store
+
+# Client data never goes in the repo
+private/
