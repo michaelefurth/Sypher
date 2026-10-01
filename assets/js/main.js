@@ -15,6 +15,8 @@
   var motion = !!(gsap && ScrollTrigger) && !reduceMotion;
   var lenis = null;
 
+  if (!motion) root.classList.remove("motion-pending");
+
   if (motion) {
     gsap.registerPlugin(ScrollTrigger);
     if (window.SplitText) gsap.registerPlugin(window.SplitText);
@@ -123,11 +125,12 @@
       var split = new window.SplitText(heroTitle, { type: "lines", mask: "lines", linesClass: "line", tag: "span", aria: "none" });
       heroTl.from(split.lines, { yPercent: 115, duration: 1.4, stagger: 0.14 }, 0);
     }
+    root.classList.remove("motion-pending");
     var heroFades = document.querySelectorAll("[data-hero-fade]");
     if (heroFades.length) heroTl.from(heroFades, { opacity: 0, y: 22, duration: 1.2, stagger: 0.12, ease: "power3.out" }, 0.35);
     var heroArt = document.querySelector("[data-hero-art]");
     if (heroArt) {
-      heroTl.from(heroArt, { opacity: 0, scale: 0.9, rotate: -8, duration: 1.8, ease: "expo.out" }, 0.1);
+      heroTl.from(heroArt, { scale: 0.94, rotate: -6, yPercent: 3, duration: 2, ease: "expo.out" }, 0); // stays visible: it is the LCP element
       gsap.to(heroArt, {
         yPercent: 14, rotate: 5, ease: "none",
         scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: true }
@@ -317,6 +320,10 @@
         var visible = okPractice && okTerms;
         if (visible && row.hidden) shown.push(row);
         row.hidden = !visible;
+      });
+      index.querySelectorAll(".pgroup").forEach(function (g) {
+        var key = g.getAttribute("data-group");
+        g.hidden = !rows.some(function (r) { return !r.hidden && r.getAttribute("data-practice") === key; });
       });
       var n = rows.filter(function (r) { return !r.hidden; }).length;
       if (count) count.textContent = n;

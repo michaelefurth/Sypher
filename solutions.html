@@ -56,7 +56,7 @@
 <header class="site-header">
   <div class="container site-header__inner">
     <a class="wordmark" href="index.html">
-      <img class="wordmark__icon" src="assets/img/sypher-mark.webp" alt="" width="44" height="44">
+      <img class="wordmark__icon" src="assets/img/sypher-mark-sm.webp" alt="" width="34" height="44">
       <span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span>
     </a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu"><span></span><span></span><span></span></button>
@@ -77,7 +77,7 @@
 
 <main id="main">
   <section class="page-hero">
-    <img class="page-hero__ribbon" src="assets/img/sypher-mark.webp" alt="" width="375" height="483">
+    <img class="page-hero__ribbon" src="assets/img/sypher-mark-480.webp" alt="" width="375" height="483">
     <div class="container">
       <nav class="breadcrumb" aria-label="Breadcrumb"><a href="index.html">Home</a><span>/</span>Solutions Index</nav>
       <p class="eyebrow">The Solutions Index</p>
@@ -95,19 +95,20 @@
         <input type="search" placeholder="Describe your problem…" autocomplete="off" data-pindex-search>
       </label>
       <div class="pindex__filters" role="group" aria-label="Filter by practice">
-        <button type="button" class="pfilter is-active" data-filter="all" aria-pressed="true">All <sup>48</sup></button>
-        <button type="button" class="pfilter" data-filter="launch" aria-pressed="false">Launch <sup>6</sup></button>
-        <button type="button" class="pfilter" data-filter="grow" aria-pressed="false">Grow <sup>6</sup></button>
-        <button type="button" class="pfilter" data-filter="run" aria-pressed="false">Run <sup>6</sup></button>
-        <button type="button" class="pfilter" data-filter="modernize" aria-pressed="false">Modernize <sup>6</sup></button>
-        <button type="button" class="pfilter" data-filter="fund" aria-pressed="false">Fund <sup>6</sup></button>
-        <button type="button" class="pfilter" data-filter="lead" aria-pressed="false">Lead <sup>6</sup></button>
-        <button type="button" class="pfilter" data-filter="invent" aria-pressed="false">Invent <sup>6</sup></button>
-        <button type="button" class="pfilter" data-filter="recover" aria-pressed="false">Recover <sup>6</sup></button>
+        <button type="button" class="pfilter is-active" data-filter="all" aria-pressed="true">All<span class="pfilter__n">48</span></button>
+        <button type="button" class="pfilter" data-filter="launch" aria-pressed="false">Launch<span class="pfilter__n">6</span></button>
+        <button type="button" class="pfilter" data-filter="grow" aria-pressed="false">Grow<span class="pfilter__n">6</span></button>
+        <button type="button" class="pfilter" data-filter="run" aria-pressed="false">Run<span class="pfilter__n">6</span></button>
+        <button type="button" class="pfilter" data-filter="modernize" aria-pressed="false">Modernize<span class="pfilter__n">6</span></button>
+        <button type="button" class="pfilter" data-filter="fund" aria-pressed="false">Fund<span class="pfilter__n">6</span></button>
+        <button type="button" class="pfilter" data-filter="lead" aria-pressed="false">Lead<span class="pfilter__n">6</span></button>
+        <button type="button" class="pfilter" data-filter="invent" aria-pressed="false">Invent<span class="pfilter__n">6</span></button>
+        <button type="button" class="pfilter" data-filter="recover" aria-pressed="false">Recover<span class="pfilter__n">6</span></button>
       </div>
     </div>
-    <p class="pindex__count" aria-live="polite"><span data-pindex-count>48</span> problems, every one solvable</p>
+    <p class="pindex__count" aria-live="polite">Showing <span data-pindex-count>48</span> of 48 problems we solve most often</p>
     <ol class="pindex__list">
+      <li class="pgroup" data-group="launch"><h2>Launch</h2><p>From idea to operating company.</p></li>
       <li class="prow" data-practice="launch">
         <details>
           <summary><span class="prow__num">01</span><span class="prow__problem">“We have an idea, but we don’t know if it’s a business.”</span><span class="prow__tag">Launch</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -144,6 +145,7 @@
           <div class="prow__solution"><p><span class="prow__label">The solution</span>A tight investor narrative, financial model and data room checklist, rehearsed until the story holds up to hard questions.</p><a class="link-arrow" href="services.html#launch">The Launch practice</a></div>
         </details>
       </li>
+      <li class="pgroup" data-group="grow"><h2>Grow</h2><p>Be found. Be chosen.</p></li>
       <li class="prow" data-practice="grow">
         <details>
           <summary><span class="prow__num">07</span><span class="prow__problem">“Our pipeline is feast or famine.”</span><span class="prow__tag">Grow</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -180,6 +182,7 @@
           <div class="prow__solution"><p><span class="prow__label">The solution</span>Collateral systems (brochures, one-pagers, case studies, proposals) designed to a consistent, premium standard.</p><a class="link-arrow" href="services.html#grow">The Grow practice</a></div>
         </details>
       </li>
+      <li class="pgroup" data-group="run"><h2>Run</h2><p>Operations that don’t depend on you being in every room.</p></li>
       <li class="prow" data-practice="run">
         <details>
           <summary><span class="prow__num">13</span><span class="prow__problem">“Everything runs through the owner.”</span><span class="prow__tag">Run</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -216,6 +219,7 @@
           <div class="prow__solution"><p><span class="prow__label">The solution</span>A meeting cadence with scorecards, issue lists and accountability, so decisions get made and stay made.</p><a class="link-arrow" href="services.html#run">The Run practice</a></div>
         </details>
       </li>
+      <li class="pgroup" data-group="modernize"><h2>Modernize</h2><p>Technology that earns its keep.</p></li>
       <li class="prow" data-practice="modernize">
         <details>
           <summary><span class="prow__num">19</span><span class="prow__problem">“We know AI could help, but where do we start?”</span><span class="prow__tag">Modernize</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -252,6 +256,7 @@
           <div class="prow__solution"><p><span class="prow__label">The solution</span>Clean data structures and automated dashboards that answer the real business questions on demand.</p><a class="link-arrow" href="services.html#modernize">The Modernize practice</a></div>
         </details>
       </li>
+      <li class="pgroup" data-group="fund"><h2>Fund</h2><p>Capital and programs, pursued with rigor.</p></li>
       <li class="prow" data-practice="fund">
         <details>
           <summary><span class="prow__num">25</span><span class="prow__problem">“We know grants exist, but not which ones fit.”</span><span class="prow__tag">Fund</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -288,6 +293,7 @@
           <div class="prow__solution"><p><span class="prow__label">The solution</span>Post-award systems covering expense tracking, outcome reporting and audit-ready records, so you’re fundable again next cycle.</p><a class="link-arrow" href="services.html#fund">The Fund practice</a></div>
         </details>
       </li>
+      <li class="pgroup" data-group="lead"><h2>Lead</h2><p>Senior leadership, at the scale you need.</p></li>
       <li class="prow" data-practice="lead">
         <details>
           <summary><span class="prow__num">31</span><span class="prow__problem">“We need a COO but can’t justify a full-time hire.”</span><span class="prow__tag">Lead</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -324,6 +330,7 @@
           <div class="prow__solution"><p><span class="prow__label">The solution</span>Cross-functional strategic operations that align targets, handoffs and reporting across the business.</p><a class="link-arrow" href="services.html#lead">The Lead practice</a></div>
         </details>
       </li>
+      <li class="pgroup" data-group="invent"><h2>Invent</h2><p>Biomedical &amp; formulation R&amp;D, from first principles.</p></li>
       <li class="prow" data-practice="invent">
         <details>
           <summary><span class="prow__num">37</span><span class="prow__problem">“We have a medical device concept and a blank page.”</span><span class="prow__tag">Invent</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -360,6 +367,7 @@
           <div class="prow__solution"><p><span class="prow__label">The solution</span>Documentation habits and research records structured from day one, the foundation for design controls and investor diligence.</p><a class="link-arrow" href="services.html#invent">The Invent practice</a></div>
         </details>
       </li>
+      <li class="pgroup" data-group="recover"><h2>Recover</h2><p>Find what the numbers are hiding.</p></li>
       <li class="prow" data-practice="recover">
         <details>
           <summary><span class="prow__num">43</span><span class="prow__problem">“Our books don’t reconcile and nobody knows why.”</span><span class="prow__tag">Recover</span><span class="prow__icon" aria-hidden="true"></span></summary>
@@ -375,7 +383,7 @@
       <li class="prow" data-practice="recover">
         <details>
           <summary><span class="prow__num">45</span><span class="prow__problem">“We may be missing credits or incentives we qualify for.”</span><span class="prow__tag">Recover</span><span class="prow__icon" aria-hidden="true"></span></summary>
-          <div class="prow__solution"><p><span class="prow__label">The solution</span>An entitlements review that surfaces potential tax credits, incentives, reimbursements and certifications, and coordinates with your CPA to claim them.</p><a class="link-arrow" href="services.html#recover">The Recover practice</a></div>
+          <div class="prow__solution"><p><span class="prow__label">The solution</span>A credits-and-incentives review that surfaces potential tax credits, incentives, reimbursements and certifications, and coordinates with your CPA to claim them.</p><a class="link-arrow" href="services.html#recover">The Recover practice</a></div>
         </details>
       </li>
       <li class="prow" data-practice="recover">
@@ -413,7 +421,7 @@
       </div>
       <div class="cta-band__aside">
         <ol>
-          <li>A 30-minute conversation</li>
+          <li>A <span class="nowrap">30-minute</span> conversation</li>
           <li>A written perspective &amp; proposed scope</li>
           <li>A clear start, with milestones &amp; measures</li>
         </ol>
@@ -431,7 +439,7 @@
     <div class="footer__grid">
       <div class="footer__brand">
         <a class="wordmark wordmark--light" href="index.html">
-          <img class="wordmark__icon" src="assets/img/monogram-512.png" alt="" width="44" height="44" loading="lazy">
+          <img class="wordmark__icon" src="assets/img/sypher-mark-sm.webp" alt="" width="34" height="44" loading="lazy">
           <span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span>
         </a>
         <p class="footer__tagline">Decoding complexity. Revealing solutions.</p>
@@ -473,7 +481,7 @@
       <p>&copy; <span data-year>2026</span> Sypher Solutions. All rights reserved.</p>
       <ul>
         <li><a href="privacy.html">Privacy</a></li>
-        <li>Strategy · Insight · Innovation · Transformation</li>
+        <li><em>Every puzzle has a solution.</em></li>
       </ul>
     </div>
   </div>
