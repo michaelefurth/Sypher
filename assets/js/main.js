@@ -1,17 +1,72 @@
-/* Sypher Solutions — site interactions (no dependencies) */
+/* Sypher Solutions — interactions & motion
+   Libraries (vendored in /assets/vendor): GSAP + ScrollTrigger, SplitText, DrawSVGPlugin, Lenis.
+   Everything degrades gracefully: without JS, without the libraries, or with
+   prefers-reduced-motion, every element renders in its final, readable state. */
 (function () {
   "use strict";
-  document.documentElement.classList.remove("no-js");
 
-  // Sticky header state
+  var root = document.documentElement;
+  root.classList.remove("no-js");
+
+  var reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var finePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  var gsap = window.gsap;
+  var ScrollTrigger = window.ScrollTrigger;
+  var motion = !!(gsap && ScrollTrigger) && !reduceMotion;
+  var lenis = null;
+
+  if (motion) {
+    gsap.registerPlugin(ScrollTrigger);
+    if (window.SplitText) gsap.registerPlugin(window.SplitText);
+    if (window.DrawSVGPlugin) gsap.registerPlugin(window.DrawSVGPlugin);
+    root.classList.add("has-motion");
+  }
+
+  /* ---------------------------------------------------------------------
+     Smooth scroll (Lenis), synced with ScrollTrigger
+     --------------------------------------------------------------------- */
+  if (motion && window.Lenis) {
+    lenis = new window.Lenis({ lerp: 0.085, wheelMultiplier: 0.95, anchors: { offset: -96 } });
+    lenis.on("scroll", ScrollTrigger.update);
+    gsap.ticker.add(function (time) { lenis.raf(time * 1000); });
+    gsap.ticker.lagSmoothing(0);
+  }
+
+  /* ---------------------------------------------------------------------
+     Header: scrolled state, hide on scroll down / reveal on scroll up
+     --------------------------------------------------------------------- */
   var header = document.querySelector(".site-header");
+  var lastY = window.scrollY;
   var onScroll = function () {
-    if (header) header.classList.toggle("is-scrolled", window.scrollY > 8);
+    var y = window.scrollY;
+    if (header) {
+      header.classList.toggle("is-scrolled", y > 8);
+      var goingDown = y > lastY + 4;
+      var goingUp = y < lastY - 4;
+      if (goingDown && y > 400) header.classList.add("is-hidden");
+      else if (goingUp || y < 120) header.classList.remove("is-hidden");
+    }
+    lastY = y;
   };
   onScroll();
   window.addEventListener("scroll", onScroll, { passive: true });
+  if (header) header.addEventListener("focusin", function () { header.classList.remove("is-hidden"); });
 
-  // Mobile navigation
+  /* Scroll progress hairline */
+  var progress = document.querySelector(".scroll-progress");
+  if (progress) {
+    var setProgress = function () {
+      var max = document.documentElement.scrollHeight - window.innerHeight;
+      progress.style.transform = "scaleX(" + (max > 0 ? Math.min(1, window.scrollY / max) : 0) + ")";
+    };
+    setProgress();
+    window.addEventListener("scroll", setProgress, { passive: true });
+    window.addEventListener("resize", setProgress);
+  }
+
+  /* ---------------------------------------------------------------------
+     Mobile navigation
+     --------------------------------------------------------------------- */
   var toggle = document.querySelector(".nav-toggle");
   var nav = document.getElementById("site-nav");
   if (toggle && nav) {
@@ -20,6 +75,7 @@
       toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
       nav.classList.toggle("is-open", open);
       document.body.classList.toggle("nav-open", open);
+      if (lenis) open ? lenis.stop() : lenis.start();
     };
     toggle.addEventListener("click", function () {
       setOpen(toggle.getAttribute("aria-expanded") !== "true");
@@ -35,15 +91,23 @@
     });
   }
 
-  // Scroll reveal
+  /* ---------------------------------------------------------------------
+     Reveals
+     --------------------------------------------------------------------- */
   var reveals = document.querySelectorAll(".reveal");
-  if ("IntersectionObserver" in window && reveals.length) {
+  if (motion) {
+    gsap.set(reveals, { opacity: 0, y: 32 });
+    ScrollTrigger.batch(reveals, {
+      start: "top 90%",
+      once: true,
+      onEnter: function (batch) {
+        gsap.to(batch, { opacity: 1, y: 0, duration: 1.1, ease: "power3.out", stagger: 0.09, overwrite: true });
+      }
+    });
+  } else if ("IntersectionObserver" in window && !reduceMotion) {
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add("is-visible");
-          io.unobserve(entry.target);
-        }
+        if (entry.isIntersecting) { entry.target.classList.add("is-visible"); io.unobserve(entry.target); }
       });
     }, { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
     reveals.forEach(function (el) { io.observe(el); });
@@ -51,34 +115,268 @@
     reveals.forEach(function (el) { el.classList.add("is-visible"); });
   }
 
-  // Services sub-navigation: highlight the section in view
+  if (motion) {
+    /* Hero entrance ---------------------------------------------------- */
+    var heroTitle = document.querySelector("[data-split-lines]");
+    var heroTl = gsap.timeline({ defaults: { ease: "power4.out" }, delay: 0.15 });
+    if (heroTitle && window.SplitText) {
+      var split = new window.SplitText(heroTitle, { type: "lines", mask: "lines", linesClass: "line", tag: "span", aria: "none" });
+      heroTl.from(split.lines, { yPercent: 115, duration: 1.4, stagger: 0.14 }, 0);
+    }
+    var heroFades = document.querySelectorAll("[data-hero-fade]");
+    if (heroFades.length) heroTl.from(heroFades, { opacity: 0, y: 22, duration: 1.2, stagger: 0.12, ease: "power3.out" }, 0.35);
+    var heroArt = document.querySelector("[data-hero-art]");
+    if (heroArt) {
+      heroTl.from(heroArt, { opacity: 0, scale: 0.9, rotate: -8, duration: 1.8, ease: "expo.out" }, 0.1);
+      gsap.to(heroArt, {
+        yPercent: 14, rotate: 5, ease: "none",
+        scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: true }
+      });
+    }
+    var heroThread = document.querySelector(".hero__thread path");
+    if (heroThread && window.DrawSVGPlugin) heroTl.from(heroThread, { drawSVG: "0%", duration: 2.6, ease: "power2.inOut" }, 0.2);
+
+    /* Statement: words light up as you read ----------------------------- */
+    document.querySelectorAll("[data-split-words]").forEach(function (el) {
+      if (!window.SplitText) return;
+      var words = new window.SplitText(el, { type: "words", tag: "span", aria: "none" }).words;
+      // A colour shift (rather than opacity) keeps resting text above WCAG large-text contrast.
+      var finals = words.map(function (w) { return getComputedStyle(w).color; });
+      gsap.fromTo(words, { color: "#7F8A92" }, {
+        color: function (i) { return finals[i]; }, stagger: 0.06, ease: "none",
+        scrollTrigger: { trigger: el, start: "top 85%", end: "center 55%", scrub: 0.6 }
+      });
+    });
+
+    /* Gold rules draw in ---------------------------------------------- */
+    document.querySelectorAll("[data-rule], .rule-gold").forEach(function (el) {
+      gsap.fromTo(el, { scaleX: 0, transformOrigin: "0 50%" }, {
+        scaleX: 1, duration: 1.4, ease: "power3.inOut",
+        scrollTrigger: { trigger: el, start: "top 90%", once: true }
+      });
+    });
+
+    /* Count-up figures -------------------------------------------------- */
+    document.querySelectorAll("[data-count]").forEach(function (el) {
+      var target = parseInt(el.getAttribute("data-count"), 10);
+      var obj = { v: 0 };
+      el.textContent = "0";
+      gsap.to(obj, {
+        v: target, duration: target > 9 ? 1.8 : 1.2, ease: "power2.out",
+        scrollTrigger: { trigger: el, start: "top 90%", once: true },
+        onUpdate: function () { el.textContent = Math.round(obj.v); }
+      });
+    });
+
+    /* Image curtain reveals --------------------------------------------- */
+    document.querySelectorAll("[data-clip]").forEach(function (el) {
+      var img = el.querySelector("img");
+      var tl = gsap.timeline({ scrollTrigger: { trigger: el, start: "top 85%", once: true } });
+      tl.to(el, { clipPath: "inset(0% 0 0 0)", duration: 1.4, ease: "expo.inOut" });
+      if (img) tl.from(img, { scale: 1.25, duration: 1.8, ease: "expo.out" }, 0.2);
+    });
+
+    /* Method: golden thread draws across the steps ---------------------- */
+    var methodWrap = document.querySelector(".method-wrap");
+    var methodThread = methodWrap && methodWrap.querySelector(".method__thread");
+    if (methodThread) {
+      var placeThread = function () {
+        var img = methodWrap.querySelector(".method__img");
+        if (img) methodWrap.style.setProperty("--thread-top", (img.offsetHeight / 2 - 30) + "px");
+      };
+      placeThread();
+      window.addEventListener("resize", placeThread);
+      if (window.DrawSVGPlugin) {
+        gsap.from(methodThread.querySelector("path"), {
+          drawSVG: "0%", ease: "none",
+          scrollTrigger: { trigger: methodWrap, start: "top 75%", end: "bottom 60%", scrub: 0.8 }
+        });
+      }
+    }
+
+    /* The Missing Piece ------------------------------------------------- */
+    var puzzle = document.querySelector("[data-puzzle]");
+    if (puzzle) buildPuzzle(puzzle);
+
+    /* Magnetic buttons -------------------------------------------------- */
+    if (finePointer) {
+      document.querySelectorAll("[data-magnetic]").forEach(function (btn) {
+        var xTo = gsap.quickTo(btn, "x", { duration: 0.5, ease: "power3.out" });
+        var yTo = gsap.quickTo(btn, "y", { duration: 0.5, ease: "power3.out" });
+        btn.addEventListener("pointermove", function (e) {
+          var r = btn.getBoundingClientRect();
+          xTo((e.clientX - r.left - r.width / 2) * 0.22);
+          yTo((e.clientY - r.top - r.height / 2) * 0.35);
+        });
+        btn.addEventListener("pointerleave", function () { xTo(0); yTo(0); });
+      });
+    }
+
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { ScrollTrigger.refresh(); });
+  }
+
+  function buildPuzzle(section) {
+    var pieces = section.querySelectorAll(".pz-piece");
+    var gold = section.querySelector(".pz-gold");
+    var glow = section.querySelector(".pz-gold__glow");
+    var slot = section.querySelector(".pz-slot");
+    var lines = section.querySelectorAll("[data-puzzle-line]");
+    var sub = section.querySelector("[data-puzzle-sub]");
+    var cta = section.querySelector("[data-puzzle-cta]");
+    var hint = section.querySelector(".puzzle__hint");
+
+    // Deterministic scatter so the composition is the same on every visit
+    var seed = 11;
+    var rand = function (min, max) { seed = (seed * 9301 + 49297) % 233280; return min + (seed / 233280) * (max - min); };
+    var scatter = Array.prototype.map.call(pieces, function () {
+      return { x: rand(-190, 190), y: rand(-150, 150), r: rand(-38, 38) };
+    });
+
+    var build = function (pin) {
+      var tl = gsap.timeline({
+        defaults: { ease: "power2.out" },
+        scrollTrigger: pin
+          ? { trigger: section, start: "top top", end: "+=170%", scrub: 0.9, pin: section.querySelector(".puzzle__pin"), anticipatePin: 1 }
+          : { trigger: section, start: "top 75%", end: "bottom 70%", scrub: 0.9 }
+      });
+      tl.from(pieces, {
+        x: function (i) { return scatter[i].x; },
+        y: function (i) { return scatter[i].y; },
+        rotation: function (i) { return scatter[i].r; },
+        opacity: 0.18, scale: 0.82, transformOrigin: "50% 50%",
+        duration: 1.2, stagger: { each: 0.05, from: "random" }
+      }, 0)
+        .from(lines[0], { yPercent: 60, opacity: 0, duration: 0.6 }, 0)
+        .to(hint, { opacity: 0, duration: 0.3 }, 0.2)
+        .from(slot, { opacity: 0, scale: 0.6, transformOrigin: "50% 50%", duration: 0.5 }, 1.0)
+        .from(gold, {
+          x: 340, y: -230, rotation: 120, scale: 1.3, opacity: 0, transformOrigin: "50% 50%",
+          duration: 1.4, ease: "power3.inOut"
+        }, 1.3)
+        // the snap
+        .to(gold, { scale: 1.07, duration: 0.18, ease: "power2.out", transformOrigin: "50% 50%" }, 2.7)
+        .to(gold, { scale: 1, duration: 0.35, ease: "back.out(3)" }, 2.88)
+        .fromTo(glow, { opacity: 0.4 }, { opacity: 1, duration: 0.25, yoyo: true, repeat: 1 }, 2.7)
+        .to(slot, { opacity: 0, duration: 0.2 }, 2.75)
+        .to(pieces, { stroke: "rgba(243, 227, 195, 0.75)", duration: 0.2, yoyo: true, repeat: 1, stagger: { each: 0.015, from: "center" } }, 2.75)
+        .from(lines[1], { yPercent: 60, opacity: 0, duration: 0.6 }, 2.9)
+        .from(sub, { opacity: 0, y: 24, duration: 0.6 }, 3.15)
+        .from(cta, { opacity: 0, y: 24, duration: 0.6 }, 3.35)
+        .to({}, { duration: 0.4 });
+      return tl;
+    };
+
+    var mm = gsap.matchMedia();
+    mm.add("(min-width: 861px)", function () { build(true); });
+    mm.add("(max-width: 860px)", function () { build(false); });
+  }
+
+  /* ---------------------------------------------------------------------
+     Animated accordions (FAQ + Problem Index)
+     --------------------------------------------------------------------- */
+  document.querySelectorAll(".faq details, .prow details").forEach(function (details) {
+    var summary = details.querySelector("summary");
+    var body = summary && summary.nextElementSibling;
+    if (!summary || !body || !motion) return;
+    summary.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (details.open) {
+        gsap.to(body, {
+          height: 0, opacity: 0, duration: 0.45, ease: "power2.inOut",
+          onComplete: function () { details.open = false; gsap.set(body, { clearProps: "height,opacity,overflow" }); ScrollTrigger.refresh(); }
+        });
+      } else {
+        details.open = true;
+        gsap.fromTo(body, { height: 0, opacity: 0, overflow: "hidden" }, {
+          height: "auto", opacity: 1, duration: 0.6, ease: "power3.out",
+          onComplete: function () { gsap.set(body, { clearProps: "height,overflow" }); ScrollTrigger.refresh(); }
+        });
+      }
+    });
+  });
+
+  /* ---------------------------------------------------------------------
+     Problem Index: search + practice filters (+ ?p=practice deep links)
+     --------------------------------------------------------------------- */
+  document.querySelectorAll("[data-pindex]").forEach(function (index) {
+    var input = index.querySelector("[data-pindex-search]");
+    var buttons = index.querySelectorAll(".pfilter");
+    var rows = Array.prototype.slice.call(index.querySelectorAll(".prow"));
+    var count = index.querySelector("[data-pindex-count]");
+    var empty = index.querySelector(".pindex__empty");
+    var active = "all";
+    var normalize = function (s) { return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9& ]+/g, " "); };
+    rows.forEach(function (row) { row._text = normalize(row.textContent); });
+
+    var apply = function () {
+      var terms = normalize(input ? input.value : "").split(/\s+/).filter(Boolean);
+      var shown = [];
+      rows.forEach(function (row) {
+        var okPractice = active === "all" || row.getAttribute("data-practice") === active;
+        var okTerms = terms.every(function (t) { return row._text.indexOf(t) !== -1; });
+        var visible = okPractice && okTerms;
+        if (visible && row.hidden) shown.push(row);
+        row.hidden = !visible;
+      });
+      var n = rows.filter(function (r) { return !r.hidden; }).length;
+      if (count) count.textContent = n;
+      if (empty) empty.hidden = n !== 0;
+      if (motion && shown.length) {
+        gsap.fromTo(shown, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.5, stagger: 0.03, ease: "power2.out", overwrite: true });
+      }
+      if (motion) ScrollTrigger.refresh();
+    };
+
+    buttons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        active = btn.getAttribute("data-filter");
+        buttons.forEach(function (b) {
+          var on = b === btn;
+          b.classList.toggle("is-active", on);
+          b.setAttribute("aria-pressed", String(on));
+        });
+        apply();
+      });
+    });
+    if (input) input.addEventListener("input", apply);
+
+    var p = new URLSearchParams(window.location.search).get("p");
+    if (p) {
+      var match = index.querySelector('.pfilter[data-filter="' + p.replace(/[^a-z]/g, "") + '"]');
+      if (match) match.click();
+    }
+  });
+
+  /* ---------------------------------------------------------------------
+     Services sub-navigation: highlight the section in view
+     --------------------------------------------------------------------- */
   var svcLinks = document.querySelectorAll(".svc-nav a");
   if (svcLinks.length && "IntersectionObserver" in window) {
     var map = {};
     svcLinks.forEach(function (a) { map[a.getAttribute("href").slice(1)] = a; });
     var svcIo = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          svcLinks.forEach(function (a) { a.classList.remove("is-active"); });
-          var link = map[entry.target.id];
-          if (link) {
-            link.classList.add("is-active");
-            link.scrollIntoView({ block: "nearest", inline: "center" });
-          }
+        if (!entry.isIntersecting) return;
+        svcLinks.forEach(function (a) { a.classList.remove("is-active"); });
+        var link = map[entry.target.id];
+        if (link) {
+          link.classList.add("is-active");
+          var bar = link.closest("ul");
+          if (bar) bar.scrollTo({ left: link.offsetLeft - bar.clientWidth / 2 + link.clientWidth / 2, behavior: "smooth" });
         }
       });
     }, { rootMargin: "-40% 0px -55% 0px" });
     document.querySelectorAll(".svc[id]").forEach(function (s) { svcIo.observe(s); });
   }
 
-  // Footer year
-  document.querySelectorAll("[data-year]").forEach(function (el) {
-    el.textContent = new Date().getFullYear();
-  });
+  /* Footer year */
+  document.querySelectorAll("[data-year]").forEach(function (el) { el.textContent = new Date().getFullYear(); });
 
-  // Contact form
-  // If the form has a data-endpoint (e.g. a Formspree URL), submit via fetch.
-  // Otherwise, compose a pre-filled email so no enquiry is ever lost.
+  /* ---------------------------------------------------------------------
+     Contact form
+     With data-endpoint (e.g. a Formspree URL) the form posts via fetch;
+     otherwise it composes a pre-filled email so no enquiry is ever lost.
+     --------------------------------------------------------------------- */
   var form = document.getElementById("contact-form");
   if (form) {
     var status = form.querySelector(".form__status");
@@ -88,7 +386,7 @@
       if (!form.checkValidity()) { form.reportValidity(); return; }
 
       var data = new FormData(form);
-      var interests = data.getAll("interests").join(", ") || "Not specified";
+      var interests = data.getAll("interests[]").join(", ") || "Not specified";
       var endpoint = form.getAttribute("data-endpoint");
 
       if (endpoint) {

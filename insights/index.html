@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Insights | Perspectives on Strategy, Operations, AI & Funding | Sypher Solutions</title>
-  <meta name="description" content="Practical perspectives from Sypher Solutions on fractional leadership, AI integration for small businesses and grant readiness.">
+  <title>Insights | Perspectives on Strategy, Operations, AI &amp; Funding | Sypher Solutions</title>
+  <meta name="description" content="Practical perspectives from Sypher Solutions on fractional leadership, AI integration for small businesses, grant readiness and forensic bookkeeping.">
   <link rel="canonical" href="https://sypher.solutions/insights/">
   <meta name="theme-color" content="#0B2D3B">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Sypher Solutions">
   <meta property="og:title" content="Insights | Sypher Solutions">
-  <meta property="og:description" content="Practical perspectives from Sypher Solutions on fractional leadership, AI integration for small businesses and grant readiness.">
+  <meta property="og:description" content="Practical perspectives from Sypher Solutions on fractional leadership, AI integration for small businesses, grant readiness and forensic bookkeeping.">
   <meta property="og:url" content="https://sypher.solutions/insights/">
   <meta property="og:image" content="https://sypher.solutions/assets/img/og-image.jpg">
   <meta property="og:image:width" content="1200">
@@ -20,11 +20,9 @@
   <link rel="icon" type="image/png" href="../assets/img/favicon-48.png">
   <link rel="apple-touch-icon" href="../assets/img/apple-touch-icon.png">
   <link rel="manifest" href="../site.webmanifest">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&amp;family=Jost:wght@300..600&amp;display=swap" rel="stylesheet">
+  <link rel="preload" href="../assets/fonts/cormorant-garamond-italic-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../assets/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="../assets/css/styles.css">
-  <script defer src="../assets/js/main.js"></script>
   <script type="application/ld+json">
 {
     "@context": "https://schema.org",
@@ -53,16 +51,18 @@
 <body>
 <!-- header:start -->
 <a class="skip-link" href="#main">Skip to content</a>
+<div class="scroll-progress" aria-hidden="true"></div>
 <header class="site-header">
   <div class="container site-header__inner">
-    <a class="wordmark" href="../index.html" aria-label="Sypher Solutions — home">
+    <a class="wordmark" href="../index.html">
       <img class="wordmark__icon" src="../assets/img/sypher-mark.webp" alt="" width="44" height="44">
-      <span class="wordmark__text"><span class="wordmark__name">SYPHER</span><span class="wordmark__sub">Solutions</span></span>
+      <span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span>
     </a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu"><span></span><span></span><span></span></button>
     <nav class="nav" id="site-nav" aria-label="Primary">
       <ul class="nav__list">
         <li><a class="nav__link" href="../services.html">Services</a></li>
+        <li><a class="nav__link" href="../solutions.html">Solutions Index</a></li>
         <li><a class="nav__link" href="../approach.html">Approach</a></li>
         <li><a class="nav__link" href="../work.html">Work</a></li>
         <li><a class="nav__link" href="../about.html">About</a></li>
@@ -86,23 +86,29 @@
   </section>
   <section class="section">
     <div class="container">
-      <div class="insights">
+      <div class="insights insights--four">
         <a class="insight reveal" href="fractional-leadership.html">
           <p class="insight__meta">Lead · 5 min read</p>
-          <h2 class="h3" style="font-size:1.75rem">Fractional leadership: senior help before a full-time hire</h2>
+          <h2 class="h3">Fractional leadership: senior help before a full-time hire</h2>
           <p>When a fractional executive is the right answer, when it isn’t, and how to structure the role so it actually works.</p>
           <span class="link-arrow">Read the essay</span>
         </a>
         <a class="insight reveal reveal-d1" href="ai-for-small-business.html">
           <p class="insight__meta">Modernize · 5 min read</p>
-          <h2 class="h3" style="font-size:1.75rem">AI for small business: start with the workflow, not the tool</h2>
+          <h2 class="h3">AI for small business: start with the workflow, not the tool</h2>
           <p>A simple, low-risk way to find the hours AI can give back to your team, and to avoid expensive experiments.</p>
           <span class="link-arrow">Read the essay</span>
         </a>
         <a class="insight reveal reveal-d2" href="grant-readiness.html">
           <p class="insight__meta">Fund · 6 min read</p>
-          <h2 class="h3" style="font-size:1.75rem">Grant readiness: what to have in place before you apply</h2>
+          <h2 class="h3">Grant readiness: what to have in place before you apply</h2>
           <p>Most applications are won or lost before the writing starts. Here is the groundwork that makes the difference.</p>
+          <span class="link-arrow">Read the essay</span>
+        </a>
+        <a class="insight reveal reveal-d3" href="forensic-bookkeeping.html">
+          <p class="insight__meta">Recover · 6 min read</p>
+          <h2 class="h3">Forensic bookkeeping: what your numbers may be hiding</h2>
+          <p>Where businesses quietly lose money, how a forensic review finds it, and the entitlements many owners never claim.</p>
           <span class="link-arrow">Read the essay</span>
         </a>
       </div>
@@ -110,12 +116,12 @@
   </section>
 
   <section class="cta-band" aria-labelledby="cta-title">
-    <div class="cta-band__ribbon" style="background-image:url('../assets/img/ribbon-portrait.webp')" aria-hidden="true"></div>
+    <div class="cta-band__ribbon" aria-hidden="true"></div>
     <div class="container cta-band__inner">
       <div>
-        <p class="eyebrow" style="color:var(--champagne)">Begin</p>
+        <p class="eyebrow">Begin</p>
         <h2 id="cta-title">Let’s decode what’s next.</h2>
-        <p class="lede" style="margin-top:1.5rem">Tell us where you are and where you want to be. We’ll tell you candidly how we can help, or who can help better.</p>
+        <p class="lede">Tell us where you are and where you want to be. We’ll tell you candidly how we can help, or who can help better.</p>
       </div>
       <div class="cta-band__aside">
         <ol>
@@ -123,7 +129,7 @@
           <li>A written perspective &amp; proposed scope</li>
           <li>A clear start, with milestones &amp; measures</li>
         </ol>
-        <a class="btn btn--gold" href="../contact.html">Book a Consultation
+        <a class="btn btn--gold" href="../contact.html" data-magnetic>Book a Consultation
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1 8h13M9 3l5 5-5 5"/></svg>
         </a>
       </div>
@@ -136,9 +142,9 @@
   <div class="container">
     <div class="footer__grid">
       <div class="footer__brand">
-        <a class="wordmark wordmark--light" href="../index.html" aria-label="Sypher Solutions — home">
+        <a class="wordmark wordmark--light" href="../index.html">
           <img class="wordmark__icon" src="../assets/img/monogram-512.png" alt="" width="44" height="44" loading="lazy">
-          <span class="wordmark__text"><span class="wordmark__name">SYPHER</span><span class="wordmark__sub">Solutions</span></span>
+          <span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span>
         </a>
         <p class="footer__tagline">Decoding complexity. Revealing solutions.</p>
       </div>
@@ -151,11 +157,14 @@
           <li><a href="../services.html#modernize">Modernize</a></li>
           <li><a href="../services.html#fund">Fund</a></li>
           <li><a href="../services.html#lead">Lead</a></li>
+          <li><a href="../services.html#invent">Invent</a></li>
+          <li><a href="../services.html#recover">Recover</a></li>
         </ul>
       </div>
       <div>
         <p class="footer__head">Firm</p>
         <ul class="footer__list">
+          <li><a href="../solutions.html">Solutions Index</a></li>
           <li><a href="../approach.html">The Sypher Method</a></li>
           <li><a href="../work.html">Selected Work</a></li>
           <li><a href="../about.html">The Principal</a></li>
@@ -171,7 +180,7 @@
         </ul>
       </div>
     </div>
-    <div class="footer__mega" aria-hidden="true">SYPHER</div>
+    <div class="footer__mega" aria-hidden="true" data-text="SYPHER"></div>
     <div class="footer__bottom">
       <p>&copy; <span data-year>2026</span> Sypher Solutions. All rights reserved.</p>
       <ul>
@@ -181,6 +190,12 @@
     </div>
   </div>
 </footer>
+<script defer src="../assets/vendor/gsap.min.js"></script>
+<script defer src="../assets/vendor/ScrollTrigger.min.js"></script>
+<script defer src="../assets/vendor/SplitText.min.js"></script>
+<script defer src="../assets/vendor/DrawSVGPlugin.min.js"></script>
+<script defer src="../assets/vendor/lenis.min.js"></script>
+<script defer src="../assets/js/main.js"></script>
 <!-- footer:end -->
 </body>
 </html>

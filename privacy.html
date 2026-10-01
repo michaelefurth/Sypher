@@ -20,11 +20,9 @@
   <link rel="icon" type="image/png" href="assets/img/favicon-48.png">
   <link rel="apple-touch-icon" href="assets/img/apple-touch-icon.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&amp;family=Jost:wght@300..600&amp;display=swap" rel="stylesheet">
+  <link rel="preload" href="assets/fonts/cormorant-garamond-italic-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="assets/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="assets/css/styles.css">
-  <script defer src="assets/js/main.js"></script>
   <script type="application/ld+json">
 {
     "@context": "https://schema.org",
@@ -53,16 +51,18 @@
 <body>
 <!-- header:start -->
 <a class="skip-link" href="#main">Skip to content</a>
+<div class="scroll-progress" aria-hidden="true"></div>
 <header class="site-header">
   <div class="container site-header__inner">
-    <a class="wordmark" href="index.html" aria-label="Sypher Solutions — home">
+    <a class="wordmark" href="index.html">
       <img class="wordmark__icon" src="assets/img/sypher-mark.webp" alt="" width="44" height="44">
-      <span class="wordmark__text"><span class="wordmark__name">SYPHER</span><span class="wordmark__sub">Solutions</span></span>
+      <span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span>
     </a>
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav" aria-label="Open menu"><span></span><span></span><span></span></button>
     <nav class="nav" id="site-nav" aria-label="Primary">
       <ul class="nav__list">
         <li><a class="nav__link" href="services.html">Services</a></li>
+        <li><a class="nav__link" href="solutions.html">Solutions Index</a></li>
         <li><a class="nav__link" href="approach.html">Approach</a></li>
         <li><a class="nav__link" href="work.html">Work</a></li>
         <li><a class="nav__link" href="about.html">About</a></li>
@@ -94,7 +94,7 @@
         <li>We do not name clients or share engagement details without explicit consent.</li>
       </ul>
       <h2>Website basics</h2>
-      <p>This site loads web fonts from Google Fonts, which may receive standard technical information such as your IP address. If analytics are added in the future, this notice will be updated to describe them.</p>
+      <p>This site does not use advertising trackers or third-party cookies, and its fonts and scripts are served from our own domain. If analytics are added in the future, this notice will be updated to describe them.</p>
       <h2>Your choices</h2>
       <p>You may ask us to access, correct or delete the information you have shared at any time by emailing <a href="mailto:michael@sypher.solutions">michael@sypher.solutions</a>.</p>
     </div>
@@ -106,9 +106,9 @@
   <div class="container">
     <div class="footer__grid">
       <div class="footer__brand">
-        <a class="wordmark wordmark--light" href="index.html" aria-label="Sypher Solutions — home">
+        <a class="wordmark wordmark--light" href="index.html">
           <img class="wordmark__icon" src="assets/img/monogram-512.png" alt="" width="44" height="44" loading="lazy">
-          <span class="wordmark__text"><span class="wordmark__name">SYPHER</span><span class="wordmark__sub">Solutions</span></span>
+          <span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span>
         </a>
         <p class="footer__tagline">Decoding complexity. Revealing solutions.</p>
       </div>
@@ -121,11 +121,14 @@
           <li><a href="services.html#modernize">Modernize</a></li>
           <li><a href="services.html#fund">Fund</a></li>
           <li><a href="services.html#lead">Lead</a></li>
+          <li><a href="services.html#invent">Invent</a></li>
+          <li><a href="services.html#recover">Recover</a></li>
         </ul>
       </div>
       <div>
         <p class="footer__head">Firm</p>
         <ul class="footer__list">
+          <li><a href="solutions.html">Solutions Index</a></li>
           <li><a href="approach.html">The Sypher Method</a></li>
           <li><a href="work.html">Selected Work</a></li>
           <li><a href="about.html">The Principal</a></li>
@@ -141,7 +144,7 @@
         </ul>
       </div>
     </div>
-    <div class="footer__mega" aria-hidden="true">SYPHER</div>
+    <div class="footer__mega" aria-hidden="true" data-text="SYPHER"></div>
     <div class="footer__bottom">
       <p>&copy; <span data-year>2026</span> Sypher Solutions. All rights reserved.</p>
       <ul>
@@ -151,6 +154,12 @@
     </div>
   </div>
 </footer>
+<script defer src="assets/vendor/gsap.min.js"></script>
+<script defer src="assets/vendor/ScrollTrigger.min.js"></script>
+<script defer src="assets/vendor/SplitText.min.js"></script>
+<script defer src="assets/vendor/DrawSVGPlugin.min.js"></script>
+<script defer src="assets/vendor/lenis.min.js"></script>
+<script defer src="assets/js/main.js"></script>
 <!-- footer:end -->
 </body>
 </html>

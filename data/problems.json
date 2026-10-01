@@ -1,0 +1,57 @@
+[
+  {"practice":"launch","featured":true,"problem":"“We have an idea, but we don’t know if it’s a business.”","solution":"A feasibility study that sizes the market, maps the competition and models unit economics, so you decide on evidence rather than optimism."},
+  {"practice":"launch","problem":"“Our bank asked for a business plan we don’t have.”","solution":"A lender-ready plan with defensible projections, use of funds and a narrative that answers underwriting questions before they’re asked."},
+  {"practice":"launch","problem":"“We’re launching and nothing is set up yet.”","solution":"An operations-setup roadmap covering entity and registration checklist, banking, tools, vendors and back office, sequenced so nothing is missed."},
+  {"practice":"launch","problem":"“We look smaller than we are.”","solution":"Brand foundations, capability statements and pitch materials that give a young company the presence of an established one."},
+  {"practice":"launch","problem":"“We don’t know who to sell to first.”","solution":"Ideal-customer definition, offer design and a first-90-days go-to-market plan with clear weekly actions."},
+  {"practice":"launch","problem":"“We need investors to take us seriously.”","solution":"A tight investor narrative, financial model and data room checklist, rehearsed until the story holds up to hard questions."},
+
+  {"practice":"grow","featured":true,"problem":"“Our pipeline is feast or famine.”","solution":"A sales operating system covering segmented target lists, scripts, follow-up cadences, CRM stages and a weekly scorecard that makes revenue predictable."},
+  {"practice":"grow","featured":true,"problem":"“Customers can’t find us on Google.”","solution":"Technical, on-page and local SEO implementation: site fixes, structured data, Google Business Profile and content that matches how buyers search."},
+  {"practice":"grow","problem":"“Our marketing is random acts of activity.”","solution":"Positioning, messaging and a channel plan sized to your budget, with the few metrics that prove what’s working."},
+  {"practice":"grow","problem":"“We get referrals, but only by luck.”","solution":"A structured referral-partner program, with partner collateral, a sharing cadence and tracking, so introductions become a channel."},
+  {"practice":"grow","problem":"“Our CRM is a graveyard.”","solution":"CRM cleanup and redesign: pipeline stages, required fields, automations and a hygiene routine your team will actually follow."},
+  {"practice":"grow","problem":"“Our sales materials don’t match our quality.”","solution":"Collateral systems (brochures, one-pagers, case studies, proposals) designed to a consistent, premium standard."},
+
+  {"practice":"run","featured":true,"problem":"“Everything runs through the owner.”","solution":"Documented SOPs, clear decision rights and an operating rhythm that lets the business run without you in every room."},
+  {"practice":"run","problem":"“Our projects always run late and over budget.”","solution":"Project management discipline, with scoping, schedules, budgets, risk logs and status reporting, applied to your critical initiatives."},
+  {"practice":"run","problem":"“We’re drowning in admin.”","solution":"Back-office redesign covering vendor management, compliance calendars, document control and delegation, with the busywork automated where possible."},
+  {"practice":"run","problem":"“We don’t know our numbers until it’s too late.”","solution":"A weekly KPI dashboard built on the handful of numbers that actually drive the business, updated without manual effort."},
+  {"practice":"run","problem":"“New hires take months to get useful.”","solution":"Onboarding playbooks, role scorecards and training plans that cut ramp-up time and make expectations explicit."},
+  {"practice":"run","problem":"“Leadership meetings go nowhere.”","solution":"A meeting cadence with scorecards, issue lists and accountability, so decisions get made and stay made."},
+
+  {"practice":"modernize","featured":true,"problem":"“We know AI could help, but where do we start?”","solution":"A workflow audit that finds the repetitive, high-volume work, then a scoped first AI project with guardrails, measured in hours saved."},
+  {"practice":"modernize","problem":"“Our website embarrasses us.”","solution":"A fast, elegant, accessible website engineered for search and conversion, one you can update yourself."},
+  {"practice":"modernize","problem":"“We re-type the same data into five systems.”","solution":"Workflow automation connecting forms, CRM, spreadsheets and email, so information is entered once and flows everywhere."},
+  {"practice":"modernize","problem":"“We pay for software nobody uses.”","solution":"A technology stack review that rationalizes tools, recovers spend and gets the remaining systems properly adopted."},
+  {"practice":"modernize","problem":"“Our files and accounts are a security risk.”","solution":"Workspace setup, access controls, password management and backup basics, documented and handed over."},
+  {"practice":"modernize","problem":"“Reports take days to put together.”","solution":"Clean data structures and automated dashboards that answer the real business questions on demand."},
+
+  {"practice":"fund","featured":true,"problem":"“We know grants exist, but not which ones fit.”","solution":"Funding research that produces a prioritized pipeline of grants and programs matched to your mission, with deadlines and go/no-go calls."},
+  {"practice":"fund","problem":"“Our last grant application was rejected.”","solution":"A readiness review and rewritten application with a sharper project, a defensible budget, measurable outcomes and stronger evidence."},
+  {"practice":"fund","problem":"“We need to hire, but cash flow is tight.”","solution":"Navigation of workforce programs such as on-the-job training and work-based learning reimbursements, matched to your hiring plan."},
+  {"practice":"fund","problem":"“We’re not registered to receive federal funds.”","solution":"A registration and compliance checklist (SAM.gov, UEI and program-specific portals), handled methodically and early."},
+  {"practice":"fund","problem":"“Government RFPs are overwhelming.”","solution":"Capability statements, compliance matrices and proposal writing for public and private procurement."},
+  {"practice":"fund","problem":"“We won the grant. Now what?”","solution":"Post-award systems covering expense tracking, outcome reporting and audit-ready records, so you’re fundable again next cycle."},
+
+  {"practice":"lead","featured":true,"problem":"“We need a COO but can’t justify a full-time hire.”","solution":"Fractional operating leadership: senior ownership of agreed objectives for the days each month that matter most."},
+  {"practice":"lead","problem":"“Our big initiative keeps slipping.”","solution":"An accountable leader who owns the initiative end to end, with a plan, a team rhythm and visible progress."},
+  {"practice":"lead","problem":"“We’re between leaders.”","solution":"Interim leadership that keeps momentum and morale steady through a transition, then hands over cleanly."},
+  {"practice":"lead","problem":"“I have no one to think out loud with.”","solution":"Strategic advisory: a trusted, candid sounding board for owners making high-stakes decisions."},
+  {"practice":"lead","problem":"“We tried to hire a senior leader and it failed.”","solution":"Build the function fractionally first, then define, recruit and onboard the right permanent hire into a role that’s proven."},
+  {"practice":"lead","problem":"“Sales and operations don’t talk to each other.”","solution":"Cross-functional strategic operations that align targets, handoffs and reporting across the business."},
+
+  {"practice":"invent","featured":true,"problem":"“We have a medical device concept and a blank page.”","solution":"Ground-up R&D planning covering problem definition, user needs, prior-art and literature landscape, concept options and a staged development roadmap."},
+  {"practice":"invent","problem":"“Our formulation works in theory, not yet in the lab.”","solution":"Formulation research planning: ingredient and excipient review, design-of-experiments, stability considerations and lab-partner coordination."},
+  {"practice":"invent","problem":"“We don’t know which FDA pathway applies to us.”","solution":"Regulatory pathway research covering device classification, predicate landscape and likely routes, organized so your regulatory counsel starts ahead."},
+  {"practice":"invent","problem":"“We need prototypes but don’t know who can make them.”","solution":"Materials, supplier and contract-manufacturer sourcing, with specifications and quotes managed to a plan."},
+  {"practice":"invent","problem":"“Research is expensive and we’re pre-revenue.”","solution":"Non-dilutive funding strategy for innovators, including SBIR/STTR and research grants, aligned to your development milestones."},
+  {"practice":"invent","problem":"“Our R&D lives in notebooks and inboxes.”","solution":"Documentation habits and research records structured from day one, the foundation for design controls and investor diligence."},
+
+  {"practice":"recover","featured":true,"problem":"“Our books don’t reconcile and nobody knows why.”","solution":"Forensic bookkeeping that rebuilds the records, traces transactions and pinpoints where and why the numbers diverge."},
+  {"practice":"recover","featured":true,"problem":"“We think money is leaking somewhere.”","solution":"A leakage review covering unbilled work, duplicate payments, unapplied credits, vendor overcharges and misclassified costs, with findings ranked by dollar impact."},
+  {"practice":"recover","problem":"“We may be missing credits or incentives we qualify for.”","solution":"An entitlements review that surfaces potential tax credits, incentives, reimbursements and certifications, and coordinates with your CPA to claim them."},
+  {"practice":"recover","problem":"“Years of records are a mess before a sale, loan or audit.”","solution":"Financial reconstruction: organized, reconciled, documented records your CPA, lender or buyer can rely on."},
+  {"practice":"recover","problem":"“Our project is stuck in permits and approvals.”","solution":"Entitlements coordination that maps the approvals, requirements and stakeholders, and keeps the process moving with the right professionals."},
+  {"practice":"recover","problem":"“We qualify for certifications but never applied.”","solution":"Small-business certification readiness (8(a), HUBZone, WOSB, DBE, SDVOSB and state programs) to open doors to set-aside work."}
+]
