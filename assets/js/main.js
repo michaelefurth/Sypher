@@ -219,29 +219,39 @@
   }
 
   function buildPuzzle(section) {
-    var pieces = section.querySelectorAll(".pz-piece");
+    var pieces = gsap.utils.toArray(section.querySelectorAll(".pz-p"));
+    var paths = section.querySelectorAll(".pz-piece");
+    var labelLayer = section.querySelector(".pz-labels");
+    var labelFor = function (key) { return section.querySelector('.pz-label[data-practice="' + key + '"]'); };
+    var allLabels = section.querySelectorAll(".pz-label");
     var gold = section.querySelector(".pz-gold");
     var glow = section.querySelector(".pz-gold__glow");
     var slot = section.querySelector(".pz-slot");
-    var lines = section.querySelectorAll("[data-puzzle-line]");
-    var sub = section.querySelector("[data-puzzle-sub]");
-    var cta = section.querySelector("[data-puzzle-cta]");
     var hint = section.querySelector(".puzzle__hint");
+    var intro = section.querySelector('[data-panel="intro"]');
+    var practicePanels = gsap.utils.toArray(section.querySelectorAll(".puzzle__panel--practice"));
+    var finalPanel = section.querySelector('[data-panel="final"]');
+    var lines = finalPanel.querySelectorAll("[data-puzzle-line]");
+    var sub = finalPanel.querySelector("[data-puzzle-sub]");
+    var cta = finalPanel.querySelector("[data-puzzle-cta]");
+    var ticks = gsap.utils.toArray(section.querySelectorAll(".puzzle__progress li"));
 
     // Deterministic scatter so the composition is the same on every visit
     var seed = 11;
     var rand = function (min, max) { seed = (seed * 9301 + 49297) % 233280; return min + (seed / 233280) * (max - min); };
-    var scatter = Array.prototype.map.call(pieces, function () {
-      return { x: rand(-190, 190), y: rand(-150, 150), r: rand(-38, 38) };
-    });
+    var scatter = pieces.map(function () { return { x: rand(-190, 190), y: rand(-150, 150), r: rand(-38, 38) }; });
 
-    var build = function (pin) {
-      var tl = gsap.timeline({
-        defaults: { ease: "power2.out" },
-        scrollTrigger: pin
-          ? { trigger: section, start: "top top", end: "+=170%", scrub: 0.9, pin: section.querySelector(".puzzle__pin"), anticipatePin: 1 }
-          : { trigger: section, start: "top 75%", end: "bottom 70%", scrub: 0.9 }
-      });
+    var STEP = 1;            // timeline units per practice
+    var FIRST = 1.6;         // when the first practice appears
+    var STORY_END = FIRST + practicePanels.length * STEP;
+    var SNAP = STORY_END + 1.5;
+
+    var build = function () {
+      var tl = gsap.timeline({ defaults: { ease: "power2.out" } });
+      gsap.set(practicePanels.concat(finalPanel), { autoAlpha: 0 });
+      gsap.set(intro, { autoAlpha: 1 });
+
+      // 1. The board assembles from scattered pieces
       tl.from(pieces, {
         x: function (i) { return scatter[i].x; },
         y: function (i) { return scatter[i].y; },
@@ -249,29 +259,75 @@
         opacity: 0.18, scale: 0.82, transformOrigin: "50% 50%",
         duration: 1.2, stagger: { each: 0.05, from: "random" }
       }, 0)
-        .from(lines[0], { yPercent: 60, opacity: 0, duration: 0.6 }, 0)
+        .from(intro, { y: 30, opacity: 0, duration: 0.6 }, 0)
         .to(hint, { opacity: 0, duration: 0.3 }, 0.2)
-        .from(slot, { opacity: 0, scale: 0.6, transformOrigin: "50% 50%", duration: 0.5 }, 1.0)
+        .from(labelLayer, { opacity: 0, duration: 0.4 }, 1.0)
+        .to(pieces, { opacity: 0.32, duration: 0.3 }, FIRST - 0.3)
+        .to(allLabels, { opacity: 0.4, duration: 0.3 }, FIRST - 0.3);
+
+      // 2. Each practice lights its piece while the copy tells its story
+      practicePanels.forEach(function (panel, i) {
+        var t = FIRST + i * STEP;
+        var key = panel.getAttribute("data-panel");
+        var piece = section.querySelector('.pz-p[data-practice="' + key + '"]');
+        var prevPanel = i === 0 ? intro : practicePanels[i - 1];
+        var prevPiece = i === 0 ? null : section.querySelector('.pz-p[data-practice="' + practicePanels[i - 1].getAttribute("data-panel") + '"]');
+        tl.to(prevPanel, { autoAlpha: 0, y: -24, duration: 0.3, ease: "power2.in" }, t)
+          .fromTo(panel, { autoAlpha: 0, y: 28 }, { autoAlpha: 1, y: 0, duration: 0.4 }, t + 0.32)
+          .fromTo(panel.querySelectorAll(".puzzle__chips li"), { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.3, stagger: 0.05 }, t + 0.4);
+        if (piece) tl.to(piece, { opacity: 1, scale: 1.07, duration: 0.4, transformOrigin: "50% 50%" }, t + 0.15)
+          .to(labelFor(key), { opacity: 1, scale: 1.12, duration: 0.4, transformOrigin: "50% 50%" }, t + 0.15);
+        if (prevPiece) {
+          var prevKey = practicePanels[i - 1].getAttribute("data-panel");
+          tl.to(prevPiece, { opacity: 0.72, scale: 1, duration: 0.4 }, t + 0.15)
+            .to(labelFor(prevKey), { opacity: 0.75, scale: 1, duration: 0.4 }, t + 0.15);
+        }
+      });
+
+      // 3. Every piece in place; the Sypher piece completes the picture
+      var last = practicePanels[practicePanels.length - 1];
+      tl.to(last, { autoAlpha: 0, y: -24, duration: 0.3, ease: "power2.in" }, STORY_END)
+        .to(pieces, { opacity: 1, scale: 1, duration: 0.5, stagger: { each: 0.03, from: "center" } }, STORY_END)
+        .to(allLabels, { opacity: 1, scale: 1, duration: 0.5 }, STORY_END)
+        .set(finalPanel, { autoAlpha: 1 }, STORY_END + 0.3)
+        .from(finalPanel.querySelector(".eyebrow"), { opacity: 0, y: 16, duration: 0.4 }, STORY_END + 0.3)
+        .from(lines[0], { yPercent: 60, opacity: 0, duration: 0.5 }, STORY_END + 0.45)
+        .from(slot, { opacity: 0, scale: 0.6, transformOrigin: "50% 50%", duration: 0.4 }, STORY_END + 0.1)
         .from(gold, {
           x: 340, y: -230, rotation: 120, scale: 1.3, opacity: 0, transformOrigin: "50% 50%",
-          duration: 1.4, ease: "power3.inOut"
-        }, 1.3)
-        // the snap
-        .to(gold, { scale: 1.07, duration: 0.18, ease: "power2.out", transformOrigin: "50% 50%" }, 2.7)
-        .to(gold, { scale: 1, duration: 0.35, ease: "back.out(3)" }, 2.88)
-        .fromTo(glow, { opacity: 0.4 }, { opacity: 1, duration: 0.25, yoyo: true, repeat: 1 }, 2.7)
-        .to(slot, { opacity: 0, duration: 0.2 }, 2.75)
-        .to(pieces, { stroke: "rgba(243, 227, 195, 0.75)", duration: 0.2, yoyo: true, repeat: 1, stagger: { each: 0.015, from: "center" } }, 2.75)
-        .from(lines[1], { yPercent: 60, opacity: 0, duration: 0.6 }, 2.9)
-        .from(sub, { opacity: 0, y: 24, duration: 0.6 }, 3.15)
-        .from(cta, { opacity: 0, y: 24, duration: 0.6 }, 3.35)
-        .to({}, { duration: 0.4 });
+          duration: 1.3, ease: "power3.inOut"
+        }, STORY_END + 0.2)
+        .to(gold, { scale: 1.08, duration: 0.18, ease: "power2.out", transformOrigin: "50% 50%" }, SNAP)
+        .to(gold, { scale: 1, duration: 0.35, ease: "back.out(3)" }, SNAP + 0.18)
+        .fromTo(glow, { opacity: 0.4 }, { opacity: 1, duration: 0.25, yoyo: true, repeat: 1 }, SNAP)
+        .to(slot, { opacity: 0, duration: 0.2 }, SNAP + 0.05)
+        .to(paths, { stroke: "rgba(243, 227, 195, 0.75)", duration: 0.2, yoyo: true, repeat: 1, stagger: { each: 0.015, from: "center" } }, SNAP + 0.05)
+        .from(lines[1], { yPercent: 60, opacity: 0, duration: 0.5 }, SNAP + 0.1)
+        .from(sub, { opacity: 0, y: 24, duration: 0.5 }, SNAP + 0.5)
+        .from(cta, { opacity: 0, y: 24, duration: 0.5 }, SNAP + 0.7)
+        .to({}, { duration: 0.6 });
+
+      // Progress ticks follow the playhead (works scrolling up or down)
+      var marks = practicePanels.map(function (_, i) { return FIRST + i * STEP + 0.2; }).concat(SNAP);
+      tl.eventCallback("onUpdate", function () {
+        var t = tl.time(), active = -1;
+        marks.forEach(function (m, i) { if (t >= m) active = i; });
+        ticks.forEach(function (li, i) {
+          li.classList.toggle("is-active", i === active);
+          li.classList.toggle("is-done", i < active);
+        });
+      });
+
+      ScrollTrigger.create({
+        animation: tl, trigger: section, start: "top top",
+        end: function () { return "+=" + Math.round(window.innerHeight * 0.62 * tl.duration()); },
+        scrub: 0.9, pin: section.querySelector(".puzzle__pin"), anticipatePin: 1, invalidateOnRefresh: true
+      });
       return tl;
     };
 
     var mm = gsap.matchMedia();
-    mm.add("(min-width: 861px)", function () { build(true); });
-    mm.add("(max-width: 860px)", function () { build(false); });
+    mm.add("all", build);
   }
 
   /* ---------------------------------------------------------------------
