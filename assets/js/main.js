@@ -24,6 +24,18 @@
     root.classList.add("has-motion");
   }
 
+  /* Puzzle board: names sit outside the board on wide screens; on small
+     screens they live in the copy panel, so crop the side margins away. */
+  var puzzleSvg = document.querySelector(".puzzle__svg");
+  if (puzzleSvg) {
+    var smallQuery = window.matchMedia("(max-width: 860px)");
+    var fitPuzzle = function () {
+      puzzleSvg.setAttribute("viewBox", smallQuery.matches ? "-24 -24 348 348" : "-92 -40 490 380");
+    };
+    fitPuzzle();
+    smallQuery.addEventListener("change", fitPuzzle);
+  }
+
   /* ---------------------------------------------------------------------
      Smooth scroll (Lenis), synced with ScrollTrigger
      --------------------------------------------------------------------- */
