@@ -522,6 +522,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 .report__h { font-family: var(--serif); font-size: 0.95rem; line-height: 1.2; color: var(--navy); margin: 0 0 0.75rem; }
 .report__row { display: grid; grid-template-columns: 1.4rem 1fr; gap: 0.5rem; align-items: center; padding: 0.45rem 0; border-top: 1px solid var(--rule); font-size: 0.6rem; color: var(--muted); }
 .report__row s { text-decoration: none; height: 4px; border-radius: 2px; background: var(--champagne-deep); }
+.report__row:nth-of-type(2) s { width: 86%; } .report__row:nth-of-type(3) s { width: 71%; } .report__row:nth-of-type(4) s { width: 58%; } .report__row:nth-of-type(5) s { width: 44%; } .report__row:nth-of-type(6) s { width: 31%; }
 .deliverable__art figcaption { margin-top: clamp(3rem, 6vw, 4.5rem); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--muted); }
 @media (max-width: 960px) {
   .deliverable { grid-template-columns: 1fr; }
