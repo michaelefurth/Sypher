@@ -495,6 +495,40 @@ ul { margin: 0; padding: 0; list-style: none; }
 @media (max-width: 960px) { .svc { grid-template-columns: 1fr; } .svc__intro { position: static; } }
 @media (max-width: 560px) { .svc__items { grid-template-columns: 1fr; } }
 
+/* ---------- Signature deliverable (home) ---------- */
+.deliverable { display: grid; grid-template-columns: 1fr 1.05fr; gap: clamp(3rem, 7vw, 7rem); align-items: center; }
+.deliverable__copy .lede { margin-top: 1.5rem; }
+.deliverable__parts { counter-reset: part; list-style: none; padding: 0; margin: 2.25rem 0 0; border-top: 1px solid var(--rule); }
+.deliverable__parts li { counter-increment: part; display: grid; grid-template-columns: 2.5rem 1fr; gap: 0.25rem 1rem; padding: 1.1rem 0; border-bottom: 1px solid var(--rule); font-size: 0.98rem; line-height: 1.6; }
+.deliverable__parts li::before { content: counter(part, lower-roman) "."; font-family: var(--serif); font-style: italic; font-size: 1.2rem; line-height: 1.35; color: var(--bronze); }
+.deliverable__parts strong { display: block; font-family: var(--serif); font-weight: 500; font-size: 1.25rem; color: var(--text-strong); margin-bottom: 0.15rem; }
+.deliverable__art { position: relative; margin: 0; }
+.report { background: var(--paper); border: 1px solid var(--rule); box-shadow: 0 30px 60px -30px rgba(11, 45, 59, 0.35), 0 2px 6px rgba(11, 45, 59, 0.06); aspect-ratio: 8.5 / 11; }
+.report--front { position: relative; z-index: 1; width: 66%; display: flex; flex-direction: column; background: #FBF8F2; }
+.report--back { position: absolute; z-index: 0; top: 7%; right: 0; width: 66%; padding: 14% 8% 0 44%; transform: rotate(2.5deg); transform-origin: top left; background: var(--paper); }
+.report__cover { flex: 1; padding: 11% 11% 0; display: flex; flex-direction: column; }
+.report__mark { width: 30px; height: auto; margin-bottom: auto; }
+.report__kicker { font-size: 0.62rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--teal); margin: 0 0 0.9rem; }
+.report__title { font-family: var(--serif); font-size: clamp(1.7rem, 1.2rem + 1.6vw, 2.5rem); line-height: 1.04; color: var(--navy); margin: 0; }
+.report__title em { display: block; color: var(--bronze); }
+.report__rule { width: 3rem; height: 1px; background: var(--champagne-deep); margin: 1.4rem 0 1rem; }
+.report__meta { font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 2rem; }
+.report__band { display: grid; grid-template-columns: 1.3fr 1fr 1fr; background: var(--navy); color: var(--on-dark-muted); }
+.report__band div { padding: 1.1rem 0 1.2rem 11%; border-left: 1px solid var(--rule-dark); }
+.report__band div:first-child { border-left: 0; }
+.report__band span { display: block; font-size: 0.56rem; letter-spacing: 0.24em; text-transform: uppercase; margin-bottom: 0.35rem; }
+.report__band b { display: block; font-family: var(--serif); font-weight: 400; font-size: clamp(1rem, 0.8rem + 0.6vw, 1.35rem); line-height: 1.15; color: var(--on-dark); font-variant-numeric: lining-nums; }
+.report__band div:first-child b { color: var(--champagne); font-style: italic; }
+.report__h { font-family: var(--serif); font-size: 0.95rem; line-height: 1.2; color: var(--navy); margin: 0 0 0.75rem; }
+.report__row { display: grid; grid-template-columns: 1.4rem 1fr; gap: 0.5rem; align-items: center; padding: 0.45rem 0; border-top: 1px solid var(--rule); font-size: 0.6rem; color: var(--muted); }
+.report__row s { text-decoration: none; height: 4px; border-radius: 2px; background: var(--champagne-deep); }
+.deliverable__art figcaption { margin-top: clamp(3rem, 6vw, 4.5rem); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--muted); }
+@media (max-width: 960px) {
+  .deliverable { grid-template-columns: 1fr; }
+  .deliverable__art { max-width: 30rem; margin-inline: auto; width: 100%; }
+}
+@media (max-width: 560px) { .report--back { display: none; } .report--front { width: 100%; } .deliverable__art figcaption { margin-top: 1.25rem; } }
+
 /* ---------- Prose (articles) ---------- */
 .prose { font-size: 1.1rem; line-height: 1.8; }
 .prose h2 { font-size: clamp(1.8rem, 1.5rem + 1vw, 2.3rem); margin: 3rem 0 1.25rem; }
@@ -509,6 +543,33 @@ ul { margin: 0; padding: 0; list-style: none; }
 .prose a:hover { border-color: var(--teal); }
 .prose blockquote { margin: 2.5rem 0; padding: 0 0 0 1.75rem; border-left: 2px solid var(--champagne); font-family: var(--serif); font-style: italic; font-size: 1.6rem; line-height: 1.35; color: var(--navy); }
 .prose strong { color: var(--text-strong); font-weight: 500; }
+
+/* Typesetting details. Cormorant's default figures are old-style, which sit
+   well in a sentence; anything meant to be read as data (stats, tables,
+   counters) switches to lining, tabular figures so columns align. */
+h1, h2, h3, h4, .lede, .prose blockquote { font-kerning: normal; font-variant-ligatures: common-ligatures contextual; }
+.figure__num, .pfilter__n, table { font-variant-numeric: lining-nums tabular-nums; }
+.prose { hanging-punctuation: first allow-end; hyphens: manual; }
+/* Opening paragraph of an essay: a three-line drop cap in the display serif. */
+.prose > .lede::first-letter {
+  float: left; margin: 0.08em 0.12em -0.1em -0.04em;
+  font-family: var(--serif); font-weight: 400; font-size: 4.1em; line-height: 0.82;
+  color: var(--navy);
+}
+.prose > .lede::first-line { letter-spacing: 0.01em; }
+/* Pull quote: a hung opening mark and a short rule, set like a magazine. */
+.prose blockquote { position: relative; border-left: 0; padding: 1.75rem 0 0 0; max-width: 34rem; }
+.prose blockquote::before {
+  content: ""; position: absolute; left: 0; top: 0; width: 3rem; height: 1px; background: var(--champagne-deep);
+}
+.prose blockquote p { margin: 0; }
+@media (max-width: 560px) {
+  .prose > .lede::first-letter { font-size: 3.4em; }
+}
+
+/* Colophon: the small note at the foot of a well-made book. */
+.footer__colophon { max-width: 46rem; margin: 0 0 1.75rem; font-size: var(--fs-xs); line-height: 1.7; color: var(--on-dark-muted); opacity: 0.85; }
+.footer__colophon em { font-family: var(--serif); font-size: 1.15em; color: var(--champagne); }
 .article-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font-size: var(--fs-xs); letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); margin-top: 2rem; }
 .breadcrumb { font-size: var(--fs-xs); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); margin-bottom: 2rem; }
 .breadcrumb a { color: var(--teal); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(30, 127, 122, 0.4); }
