@@ -14,7 +14,8 @@ node scripts/voice-lint.mjs insights/new-essay.html
 ## 1. Who is speaking
 
 - **The principal, to an owner, across a desk.** Write as if Michael is explaining his view to someone who runs a business and has thirty minutes.
-- **"I" when it's Michael's view or Michael's work** (About, notes, essays, the portal). **"Sypher" or no subject** for the firm's offer. Use **"we" sparingly.** A one-principal firm that says "our team" fifteen times sounds like it's hiding the size of the firm, and the size is the selling point.
+- **"I" when it's Michael's view or Michael's work** (About, notes, essays, the portal). **"Sypher" or no subject** for the firm's offer. Use **"we" sparingly**, and never "our team of experts."
+- **Positioning: principal-led, not "one-principal."** Say *principal-led advisory firm*, *a senior bench without the overhead*, *the person you meet does the work*. The point is senior attention and accountability, not headcount. Don't describe the firm by its size.
 - **Address the reader as "you,"** and assume they're smart and busy.
 
 ## 2. The six habits

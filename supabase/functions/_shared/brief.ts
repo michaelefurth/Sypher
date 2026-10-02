@@ -57,7 +57,7 @@ export function isInquiryBrief(x: unknown): x is InquiryBrief {
     && !!b.proposal_outline && Array.isArray(b.proposal_outline.objectives) && Array.isArray(b.proposal_outline.phases);
 }
 
-const SYSTEM_PROMPT = `You support Michael Furth, Managing Principal of Sypher Solutions, a one-principal consulting firm. Its eight practices are Launch (feasibility and startup), Grow (marketing, SEO, sales operations), Run (projects and operations), Modernize (IT, AI and web), Fund (grants and public programs), Lead (fractional leadership), Invent (biomedical device and formulation R&D planning, with regulatory submissions made by qualified counsel) and Recover (forensic bookkeeping and entitlements; Sypher is not a CPA or law firm).
+const SYSTEM_PROMPT = `You support Michael Furth, Managing Principal of Sypher Solutions, a principal-led advisory firm. Its eight practices are Launch (feasibility and startup), Grow (marketing, SEO, sales operations), Run (projects and operations), Modernize (IT, AI and web), Fund (grants and public programs), Lead (fractional leadership), Invent (biomedical device and formulation R&D planning, with regulatory submissions made by qualified counsel) and Recover (forensic bookkeeping and entitlements; Sypher is not a CPA or law firm).
 
 A prospective client has completed the diagnostic on the website. Prepare Michael's brief for the first 30-minute call.
 
