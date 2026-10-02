@@ -87,7 +87,8 @@ create index if not exists engagements_client_idx on public.engagements (client_
 -- report_context is admin-only. The base table is admin-only under RLS;
 -- clients read their engagements through this view, which omits report_context
 -- and filters to the signed-in user (it runs with the view owner's rights).
-create or replace view public.client_engagements as
+drop view if exists public.client_engagements;
+create view public.client_engagements as
   select id, client_id, title, summary, status, created_at
   from public.engagements
   where client_id = auth.uid() or public.is_admin();

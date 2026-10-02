@@ -193,6 +193,9 @@ ul { margin: 0; padding: 0; list-style: none; }
 .btn:hover svg { transform: translateX(4px); }
 .btn--gold { background: var(--champagne); color: var(--navy); }
 .btn--gold:hover { background: #E2C79C; }
+.btn--sm { padding: 0.65rem 1.2rem; font-size: 0.66rem; }
+.btn--ghost { background: transparent; border-color: var(--rule-strong); color: var(--navy); }
+.btn--ghost:hover { border-color: var(--navy); }
 .btn--navy { background: var(--navy); color: var(--on-dark); }
 .btn--navy:hover { background: #17645F; }
 .btn--outline { border-color: var(--champagne-deep); color: var(--navy); }
@@ -615,6 +618,58 @@ h1, h2, h3, h4, .lede, .prose blockquote { font-kerning: normal; font-variant-li
 .form__note a { text-decoration: underline; text-underline-offset: 3px; }
 .form__status { grid-column: 1 / -1; font-family: var(--serif); font-style: italic; font-size: 1.25rem; color: var(--teal); min-height: 1.5em; }
 .hp { position: absolute; left: -9999px; }
+
+/* ---------- Diagnostic (contact page) ---------- */
+.contact__intro { font-family: var(--serif); font-size: 1.45rem; line-height: 1.4; color: var(--text-strong); margin-bottom: 1.75rem; }
+.contact__aside .contact__details dd { font-size: 1.25rem; }
+.dx { background: #fff; border: 1px solid var(--rule); padding: clamp(1.5rem, 4vw, 3rem); position: relative; scroll-margin-top: 110px; }
+.dx::before { content: ""; position: absolute; left: -1px; right: -1px; top: -1px; height: 2px; background: linear-gradient(90deg, var(--teal), var(--champagne)); }
+.dx__fallback .dx__title { font-family: var(--serif); font-size: 1.8rem; color: var(--text-strong); margin-bottom: 0.75rem; }
+.dx__head { margin-bottom: 1.75rem; }
+.dx__step { font-size: var(--fs-xs); letter-spacing: 0.26em; text-transform: uppercase; color: var(--teal); font-weight: 450; margin-bottom: 0.9rem; }
+.dx__bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; list-style: none; margin: 0; padding: 0; }
+.dx__bar li { height: 2px; background: var(--stone); transition: background .5s var(--ease); }
+.dx__bar li.is-done { background: var(--champagne-deep); }
+.dx__bar li.is-on { background: var(--teal); }
+.dx__fs { border: 0; margin: 0; padding: 0; min-width: 0; }
+.dx__legend { font-family: var(--serif); font-size: clamp(1.7rem, 1.3rem + 1.2vw, 2.3rem); line-height: 1.15; color: var(--text-strong); padding: 0; margin-bottom: 1.5rem; outline: none; }
+.dx__legend span { display: block; font-family: var(--sans); font-size: 0.95rem; color: var(--muted); margin-top: 0.5rem; }
+.dx__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.75rem; }
+.dx__card { position: relative; cursor: pointer; }
+.dx__card input { position: absolute; opacity: 0; inset: 0; pointer-events: none; }
+.dx__card span { display: block; height: 100%; padding: 1rem 1.1rem 1.1rem; border: 1px solid var(--rule-strong); font-size: 0.9rem; line-height: 1.45; color: var(--slate); transition: border-color .25s var(--ease), background .25s var(--ease), color .25s var(--ease); }
+.dx__card b { display: block; font-family: var(--serif); font-weight: 500; font-size: 1.3rem; color: var(--text-strong); margin-bottom: 0.2rem; }
+.dx__card:hover span { border-color: var(--teal); }
+.dx__card input:checked + span { background: var(--navy); border-color: var(--navy); color: var(--on-dark-muted); }
+.dx__card input:checked + span b { color: var(--champagne); }
+.dx__card input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+.dx__form { background: none; border: 0; padding: 0; }
+.dx__q { position: relative; }
+.dx__tag { position: absolute; right: 0; top: 0; font-size: 0.62rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--bronze); }
+.dx__q .field label { padding-right: 5.5rem; text-transform: none; letter-spacing: 0; font-size: 1rem; color: var(--text-strong); font-family: var(--serif); font-size: 1.2rem; line-height: 1.3; }
+.dx__q .field textarea { min-height: 96px; }
+.dx__opt { text-transform: none; letter-spacing: 0; color: var(--muted); font-size: 0.8rem; margin-left: 0.35rem; }
+.dx__error { min-height: 1.4em; margin: 1rem 0 0; color: #9B2C2C; font-size: 0.92rem; }
+.dx__nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 0.5rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); }
+@media (max-width: 560px) { .dx__cards { grid-template-columns: 1fr 1fr; } .dx__card b { font-size: 1.15rem; } .dx__card span { font-size: 0.82rem; padding: 0.85rem; } }
+
+.memo { outline: none; }
+.memo__kicker { font-size: var(--fs-xs); letter-spacing: 0.26em; text-transform: uppercase; color: var(--teal); margin-bottom: 1rem; }
+.memo__title { font-size: clamp(2rem, 1.5rem + 1.5vw, 2.8rem); margin-bottom: 0.75rem; }
+.memo__title em { color: var(--teal); }
+.memo__lede { color: var(--slate); }
+.memo__demo { margin: 1.25rem 0 0; padding: 0.9rem 1.1rem; background: #F3E9D6; font-size: 0.9rem; color: var(--navy); }
+.memo__sheet { margin-top: 2rem; padding: clamp(1.25rem, 3vw, 2rem); background: var(--paper); border: 1px solid var(--rule); }
+.memo__meta { display: grid; gap: 0.6rem; margin: 0 0 1.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--champagne); }
+.memo__meta div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1rem; }
+.memo__meta dt { font-size: 0.66rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); padding-top: 0.2rem; }
+.memo__meta dd { margin: 0; color: var(--text-strong); }
+.memo__group + .memo__group { margin-top: 1.5rem; }
+.memo__group h3 { font-size: 0.7rem; font-family: var(--sans); letter-spacing: 0.24em; text-transform: uppercase; color: var(--bronze); margin-bottom: 0.75rem; }
+.memo__q { font-family: var(--serif); font-size: 1.15rem; color: var(--text-strong); margin: 0 0 0.2rem; }
+.memo__a { margin: 0 0 1rem; white-space: pre-line; }
+.memo__actions { margin-top: 1.75rem; }
+@media print { .page-hero, .contact__aside, .memo__actions, .memo__demo { display: none !important; } .dx { border: 0; padding: 0; } .contact { display: block; } }
 @media (max-width: 960px) { .contact { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
 

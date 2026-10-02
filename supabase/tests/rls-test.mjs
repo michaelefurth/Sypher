@@ -5,7 +5,7 @@
 //   cd supabase/tests && npm i @electric-sql/pglite && node rls-test.mjs
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 
 const db = new PGlite({ extensions: { pgcrypto } });
 const results = [];
@@ -29,7 +29,11 @@ await db.exec(`
   alter default privileges in schema public grant all on functions to anon, authenticated;
 `);
 
-const sql = readFileSync(process.argv[2] ?? new URL("../migrations/20261001000000_client_portal.sql", import.meta.url), "utf8");
+// Every migration, in order (or one file passed on the command line).
+const migDir = new URL("../migrations/", import.meta.url);
+const sql = process.argv[2]
+  ? readFileSync(process.argv[2], "utf8")
+  : readdirSync(migDir).filter((f) => f.endsWith(".sql")).sort().map((f) => readFileSync(new URL(f, migDir), "utf8")).join("\n");
 try { await db.exec(sql); ok("migration runs", true); }
 catch (e) { ok("migration runs", false, e.message); console.log(results.join("\n")); process.exit(1); }
 // run twice: must be idempotent
@@ -113,6 +117,73 @@ await as(ADMIN, async () => {
 await as(A, async () => {
   const u3 = await q(`update public.answers set value = 'edited after reopen' returning id`);
   ok("client can edit again once reopened", u3.rows.length === 1);
+});
+
+// --- Diagnostic inquiries, proposals and client rooms ---
+const ENG_A = "10000000-0000-0000-0000-000000000001";
+await db.exec(`
+  insert into public.inquiries (id, name, email, practices, answers) values
+   ('50000000-0000-0000-0000-000000000001', 'Prospect', 'p@example.com', '{Launch}', '[{"key":"x","question":"q","answer":"a"}]');
+  insert into public.proposals (id, token, status, title, content, valid_until) values
+   ('60000000-0000-0000-0000-000000000001', 'tok-sent', 'sent', 'Prop Sent', '{"options":[{"id":"build","name":"Build"}]}', current_date + 30),
+   ('60000000-0000-0000-0000-000000000002', 'tok-draft', 'draft', 'Prop Draft', '{}', null),
+   ('60000000-0000-0000-0000-000000000003', 'tok-old', 'sent', 'Prop Expired', '{"options":[{"id":"build"}]}', current_date - 1),
+   ('60000000-0000-0000-0000-000000000004', 'tok-decline', 'sent', 'Prop Decline', '{"options":[]}', null);
+  insert into public.milestones (engagement_id, position, title, status) values ('${ENG_A}', 1, 'Kickoff', 'done');
+  insert into public.decisions (engagement_id, decision) values ('${ENG_A}', 'Go with option B');
+`);
+
+async function asAnon(fn) {
+  await db.exec(`set role anon; select set_config('request.jwt.claim.sub', '', false);`);
+  try { return await fn(); } finally { await db.exec(`reset role;`); }
+}
+
+await asAnon(async () => {
+  ok("anon cannot read inquiries", await fails(`select * from public.inquiries`) || (await q(`select * from public.inquiries`)).rows.length === 0);
+  ok("anon cannot insert inquiries directly", await fails(`insert into public.inquiries (name, email) values ('x', 'x@x.co')`));
+  ok("anon cannot list proposals", await fails(`select * from public.proposals`) || (await q(`select * from public.proposals`)).rows.length === 0);
+  const p = (await q(`select public.get_proposal('tok-sent') p`)).rows[0].p;
+  ok("anon reads a sent proposal by token", p?.title === "Prop Sent" && p.status === "viewed");
+  ok("public proposal hides the token and internal ids", p && !("token" in p) && !("inquiry_id" in p) && !("engagement_id" in p));
+  ok("anon cannot read a draft proposal", (await q(`select public.get_proposal('tok-draft') p`)).rows[0].p === null);
+  ok("unknown token returns nothing", (await q(`select public.get_proposal('nope') p`)).rows[0].p === null);
+  ok("accept needs a valid option", await fails(`select public.respond_proposal('tok-sent', 'accept', 'nope', 'Avery Morgan', 'Owner', 'avery@example.com')`));
+  ok("accept needs a signature", await fails(`select public.respond_proposal('tok-sent', 'accept', 'build', '', 'Owner', 'avery@example.com')`));
+  const r = (await q(`select public.respond_proposal('tok-sent', 'accept', 'build', 'Avery Morgan', 'Owner', 'Avery@Example.com') r`)).rows[0].r;
+  ok("anon can accept a sent proposal", r?.status === "accepted" && r.signer_name === "Avery Morgan");
+  ok("a proposal can't be answered twice", await fails(`select public.respond_proposal('tok-sent', 'decline')`));
+  ok("an expired proposal can't be accepted", await fails(`select public.respond_proposal('tok-old', 'accept', 'build', 'Avery Morgan', '', 'a@example.com')`));
+  ok("expired proposal is flagged", (await q(`select public.get_proposal('tok-old') p`)).rows[0].p.expired === true);
+  const d = (await q(`select public.respond_proposal('tok-decline', 'decline', null, null, null, null, 'Timing') r`)).rows[0].r;
+  ok("anon can decline", d?.status === "declined");
+  ok("anon cannot update proposals directly", (await q(`update public.proposals set status = 'accepted' returning id`).catch(() => ({ rows: [] }))).rows.length === 0);
+  ok("anon cannot read milestones", await fails(`select * from public.milestones`) || (await q(`select * from public.milestones`)).rows.length === 0);
+});
+
+await as(A, async () => {
+  ok("client sees own milestones", (await q(`select * from public.milestones`)).rows.length === 1);
+  ok("client sees own decisions", (await q(`select * from public.decisions`)).rows.length === 1);
+  ok("client cannot add a decision", await fails(`insert into public.decisions (engagement_id, decision) values ('${ENG_A}', 'x')`));
+  ok("client cannot read inquiries", (await q(`select * from public.inquiries`)).rows.length === 0);
+  ok("client cannot read proposals table", (await q(`select * from public.proposals`)).rows.length === 0);
+  const ce = await q(`select * from public.client_engagements`);
+  ok("room fields reach the client view", "next_meeting_at" in ce.rows[0] && !("report_context" in ce.rows[0]));
+});
+
+await as(B, async () => {
+  ok("other client cannot see A's milestones", (await q(`select * from public.milestones`)).rows.length === 0);
+  ok("other client cannot see A's decisions", (await q(`select * from public.decisions`)).rows.length === 0);
+});
+
+await as(ADMIN, async () => {
+  ok("admin reads inquiries", (await q(`select * from public.inquiries`)).rows.length === 1);
+  const pr = await rows(`select status, signer_email, view_count from public.proposals where token = 'tok-sent'`);
+  ok("acceptance recorded with tracking", pr[0]?.status === "accepted" && pr[0].signer_email === "avery@example.com" && pr[0].view_count === 1);
+  const before = (await rows(`select view_count from public.proposals where token = 'tok-draft'`))[0].view_count;
+  const prev = (await q(`select public.get_proposal('tok-draft') p`)).rows[0].p;
+  const after = (await rows(`select view_count from public.proposals where token = 'tok-draft'`))[0].view_count;
+  ok("admin can preview a draft without counting a view", prev?.title === "Prop Draft" && before === after);
+  ok("acceptance logged to activity", (await q(`select * from public.activity where kind = 'proposal_accepted'`)).rows.length === 1);
 });
 
 console.log(results.join("\n"));

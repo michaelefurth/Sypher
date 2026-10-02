@@ -5,9 +5,30 @@
 //   - Demo: fictional data kept in this browser's localStorage, so the portal
 //     can be explored before Supabase is connected.
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./config.js";
-import { demoSeed, demoDraft, DEMO_IDS } from "./demo-data.js";
+import { demoSeed, demoDraft, demoBrief, DEMO_IDS, DEFAULT_TERMS } from "./demo-data.js";
 
 export const isDemo = !(SUPABASE_URL && SUPABASE_ANON_KEY);
+export { DEFAULT_TERMS };
+
+/** The private link a client opens to read a proposal. */
+export function proposalLink(p, base = location.href) {
+  return `${siteRoot(base)}for/?p=${encodeURIComponent((p.slug ? `${p.slug}.` : "") + p.token)}`;
+}
+// The site may be served from a sub-path (previews); resolve /for/ relative to the site root.
+function siteRoot(base) {
+  const u = new URL(base);
+  const i = u.pathname.search(/\/(portal|for)\//);
+  return u.origin + (i >= 0 ? u.pathname.slice(0, i + 1) : "/");
+}
+export function slugify(text) {
+  return String(text || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/\(sample\)/g, "")
+    .replace(/&/g, " ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").split("-").slice(0, 3).join("-");
+}
+/** Token from a /for/?p=<slug>.<token> link. */
+export function tokenFromParam(param) {
+  const v = String(param || "");
+  return v.includes(".") ? v.slice(v.lastIndexOf(".") + 1) : v;
+}
 
 /* ------------------------------------------------------------------------ */
 /* Shared helpers                                                            */
@@ -54,7 +75,7 @@ export function validateTemplate(t) {
 /* ------------------------------------------------------------------------ */
 /* Demo back end                                                             */
 /* ------------------------------------------------------------------------ */
-const DEMO_KEY = "sypher-portal-demo-v1";
+const DEMO_KEY = "sypher-portal-demo-v2";
 const SESSION_KEY = "sypher-portal-demo-session";
 
 // The demo's simulated "AI pass" completes any draft older than a few seconds,
@@ -68,6 +89,11 @@ function settleDemoDrafts(db) {
     dr.draft = demoDraft(qs, db.answers.filter((x) => x.assignment_id === a.id));
     dr.status = "awaiting_review"; dr.model = "demo (sample output)";
     db.activity.push({ id: uid(), engagement_id: a.engagement_id, kind: "draft_ready", detail: { draft_id: dr.id }, created_at: now() });
+    changed = true;
+  }
+  for (const inq of db.inquiries || []) {
+    if (inq.brief_status !== "pending" || Date.now() - new Date(inq.created_at).getTime() < 2500) continue;
+    inq.brief = demoBrief(inq); inq.brief_status = "ready"; inq.brief_model = "demo (sample output)";
     changed = true;
   }
   if (changed) demoSave(db);
@@ -88,6 +114,17 @@ function demoSave(db) {
 }
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
 const now = () => new Date().toISOString();
+
+/** What a client may see of a proposal (mirrors public.proposal_public in SQL). */
+function publicProposal(p) {
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    title: p.title, client_name: p.client_name, company: p.company, content: p.content, status: p.status,
+    valid_until: p.valid_until, sent_at: p.sent_at || p.created_at,
+    expired: !!p.valid_until && p.valid_until < today && ["sent", "viewed"].includes(p.status),
+    responded_at: p.responded_at, accepted_option: p.accepted_option, signer_name: p.signer_name, signer_title: p.signer_title,
+  };
+}
 
 let memorySession = null;
 function demoSession() {
@@ -266,6 +303,117 @@ const demo = {
     db.activity.push({ id: uid(), engagement_id, kind: "update_published", detail: { title }, created_at: now() });
     demoSave(db);
   },
+  // ---- diagnostic (public) ----
+  async submitInquiry(payload) {
+    const db = demoLoad();
+    const row = {
+      id: uid(), created_at: now(), name: payload.name, email: payload.email, company: payload.company || null,
+      role: payload.role || null, phone: payload.phone || null, practices: payload.practices, answers: payload.answers,
+      status: "new", brief: null, brief_status: "pending", brief_model: null, brief_error: null, admin_notes: null,
+    };
+    db.inquiries.unshift(row);
+    db.activity.push({ id: uid(), engagement_id: null, kind: "inquiry_received", detail: { inquiry_id: row.id }, created_at: now() });
+    demoSave(db);
+    return { ok: true, id: row.id, demo: true };
+  },
+  async inquiries() { return demoLoad().inquiries.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)); },
+  async inquiry(id) {
+    const db = demoLoad();
+    const i = db.inquiries.find((x) => x.id === id);
+    if (!i) throw new Error("Inquiry not found.");
+    return { ...i, proposals: db.proposals.filter((p) => p.inquiry_id === id) };
+  },
+  async updateInquiry(id, fields) {
+    const db = demoLoad();
+    Object.assign(db.inquiries.find((x) => x.id === id), fields);
+    demoSave(db);
+  },
+
+  // ---- proposals ----
+  async proposals() { return demoLoad().proposals.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)); },
+  async proposal(id) {
+    const p = demoLoad().proposals.find((x) => x.id === id);
+    if (!p) throw new Error("Proposal not found.");
+    return p;
+  },
+  async createProposal(fields) {
+    const db = demoLoad();
+    const p = {
+      id: uid(), created_at: now(), updated_at: now(), token: (uid() + uid()).replace(/-/g, "").slice(0, 40), status: "draft",
+      title: "", client_name: null, client_email: null, company: null, slug: null, content: {}, valid_until: null,
+      inquiry_id: null, engagement_id: null, sent_at: null, first_viewed_at: null, last_viewed_at: null, view_count: 0,
+      responded_at: null, accepted_option: null, signer_name: null, signer_title: null, signer_email: null, decline_reason: null,
+      ...fields,
+    };
+    db.proposals.unshift(p);
+    demoSave(db);
+    return p.id;
+  },
+  async updateProposal(id, fields) {
+    const db = demoLoad();
+    Object.assign(db.proposals.find((x) => x.id === id), fields, { updated_at: now() });
+    demoSave(db);
+  },
+  async proposalByToken(token) {
+    const db = demoLoad();
+    const p = db.proposals.find((x) => x.token === token);
+    if (!p) return null;
+    const admin = demoSession()?.userId === DEMO_IDS.ADMIN_ID;
+    if (["draft", "withdrawn"].includes(p.status) && !admin) return null;
+    if (!admin) {
+      if (p.status === "sent") p.status = "viewed";
+      p.first_viewed_at = p.first_viewed_at || now(); p.last_viewed_at = now(); p.view_count += 1;
+      demoSave(db);
+    }
+    return publicProposal(p);
+  },
+  async respondProposal(token, action, f = {}) {
+    const db = demoLoad();
+    const p = db.proposals.find((x) => x.token === token);
+    if (!p || !["sent", "viewed"].includes(p.status)) throw new Error("This proposal is not open for a response.");
+    if (p.valid_until && p.valid_until < new Date().toISOString().slice(0, 10)) throw new Error("This proposal has expired. Please contact Michael for an updated one.");
+    if (action === "accept") {
+      if ((f.name || "").trim().length < 2) throw new Error("Please type your full name to sign.");
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email || "")) throw new Error("Please enter a valid email.");
+      if (!(p.content.options || []).some((o) => o.id === f.option)) throw new Error("Please choose one of the options.");
+      Object.assign(p, { status: "accepted", responded_at: now(), accepted_option: f.option, signer_name: f.name.trim(), signer_title: (f.title || "").trim(), signer_email: f.email.trim().toLowerCase() });
+    } else {
+      Object.assign(p, { status: "declined", responded_at: now(), decline_reason: f.reason || null });
+    }
+    db.activity.push({ id: uid(), engagement_id: p.engagement_id, kind: `proposal_${p.status}`, detail: { proposal_id: p.id, title: p.title }, created_at: now() });
+    demoSave(db);
+    return publicProposal(p);
+  },
+
+  // ---- client room ----
+  async milestones(engagementId) {
+    return demoLoad().milestones.filter((m) => m.engagement_id === engagementId).sort((a, b) => a.position - b.position);
+  },
+  async saveMilestone(row) {
+    const db = demoLoad();
+    if (row.id) Object.assign(db.milestones.find((m) => m.id === row.id), row);
+    else db.milestones.push({ status: "upcoming", note: null, due_label: null, due_date: null, created_at: now(), ...row, id: uid() });
+    demoSave(db);
+  },
+  async deleteMilestone(id) {
+    const db = demoLoad();
+    db.milestones = db.milestones.filter((m) => m.id !== id);
+    demoSave(db);
+  },
+  async decisions(engagementId) {
+    return demoLoad().decisions.filter((d) => d.engagement_id === engagementId).sort((a, b) => b.decided_on.localeCompare(a.decided_on));
+  },
+  async addDecision(row) {
+    const db = demoLoad();
+    db.decisions.push({ id: uid(), created_at: now(), decided_on: new Date().toISOString().slice(0, 10), rationale: null, owner: null, ...row });
+    demoSave(db);
+  },
+  async deleteDecision(id) {
+    const db = demoLoad();
+    db.decisions = db.decisions.filter((d) => d.id !== id);
+    demoSave(db);
+  },
+
   async activity(engagementId) {
     const db = demoLoad();
     return db.activity.filter((a) => !engagementId || a.engagement_id === engagementId).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 40);
@@ -445,6 +593,92 @@ const live = {
     check(await client.from("report_drafts").update({ status: "dismissed", reviewed_at: new Date().toISOString() }).eq("id", id));
   },
   async publish(payload) { return invoke("publish-update", payload); },
+  // ---- diagnostic (public; plain fetch so the contact page needn't load the Supabase client) ----
+  async submitInquiry(payload) {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/submit-inquiry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Something went wrong. Please email michael@sypher.solutions.");
+    return data;
+  },
+  async inquiries() {
+    const client = await sb();
+    return check(await client.from("inquiries").select("*").order("created_at", { ascending: false }));
+  },
+  async inquiry(id) {
+    const client = await sb();
+    const [i, proposals] = await Promise.all([
+      client.from("inquiries").select("*").eq("id", id).single().then(check),
+      client.from("proposals").select("id, title, status, created_at").eq("inquiry_id", id).then(check),
+    ]);
+    return { ...i, proposals };
+  },
+  async updateInquiry(id, fields) {
+    const client = await sb();
+    check(await client.from("inquiries").update(fields).eq("id", id));
+  },
+
+  // ---- proposals ----
+  async proposals() {
+    const client = await sb();
+    return check(await client.from("proposals").select("*").order("created_at", { ascending: false }));
+  },
+  async proposal(id) {
+    const client = await sb();
+    return check(await client.from("proposals").select("*").eq("id", id).single());
+  },
+  async createProposal(fields) {
+    const client = await sb();
+    return check(await client.from("proposals").insert(fields).select("id").single()).id;
+  },
+  async updateProposal(id, fields) {
+    const client = await sb();
+    check(await client.from("proposals").update(fields).eq("id", id));
+  },
+  async proposalByToken(token) {
+    const client = await sb();
+    return check(await client.rpc("get_proposal", { p_token: token }));
+  },
+  async respondProposal(token, action, f = {}) {
+    const client = await sb();
+    const p = check(await client.rpc("respond_proposal", {
+      p_token: token, p_action: action, p_option: f.option ?? null, p_name: f.name ?? null,
+      p_title: f.title ?? null, p_email: f.email ?? null, p_reason: f.reason ?? null,
+    }));
+    try { await invoke("proposal-response", { token }); } catch (err) { console.warn("Notification not sent:", err.message); }
+    return p;
+  },
+
+  // ---- client room ----
+  async milestones(engagementId) {
+    const client = await sb();
+    return check(await client.from("milestones").select("*").eq("engagement_id", engagementId).order("position"));
+  },
+  async saveMilestone(row) {
+    const client = await sb();
+    if (row.id) { const { id, ...fields } = row; check(await client.from("milestones").update(fields).eq("id", id)); }
+    else check(await client.from("milestones").insert(row));
+  },
+  async deleteMilestone(id) {
+    const client = await sb();
+    check(await client.from("milestones").delete().eq("id", id));
+  },
+  async decisions(engagementId) {
+    const client = await sb();
+    return check(await client.from("decisions").select("*").eq("engagement_id", engagementId).order("decided_on", { ascending: false }));
+  },
+  async addDecision(row) {
+    const client = await sb();
+    check(await client.from("decisions").insert(row));
+  },
+  async deleteDecision(id) {
+    const client = await sb();
+    check(await client.from("decisions").delete().eq("id", id));
+  },
+
   async activity(engagementId) {
     const client = await sb();
     let q = client.from("activity").select("*").order("created_at", { ascending: false }).limit(40);

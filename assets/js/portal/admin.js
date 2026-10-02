@@ -1,8 +1,9 @@
 // Admin console for the Managing Principal.
-// Routes (hash): #overview · #clients · #engagement=<id> · #responses=<assignmentId>
-//                #draft=<id> · #questionnaires
+// Routes (hash): #overview · #inquiries · #inquiry=<id> · #proposals · #proposal=<id>
+//                #clients · #engagement=<id> · #responses=<assignmentId> · #draft=<id> · #questionnaires
 import { store, isDemo, progressOf } from "./store.js";
 import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, statusPill, progressBar, download } from "./ui.js";
+import { viewInquiries, viewInquiry, viewProposals, viewProposal, pipelineSubmit, pipelineClick } from "./admin-pipeline.js";
 
 const main = document.getElementById("main");
 let session;
@@ -12,7 +13,9 @@ const CHANGE_CLASS = { revise: "pill--teal", confirm: "", contradiction: "pill--
 const ACTIVITY = {
   client_invited: "Client invited", assignment_created: "Questionnaire assigned", assignment_submitted: "Questionnaire submitted",
   draft_ready: "AI draft ready for review", update_published: "Update published",
+  inquiry_received: "New diagnostic received", proposal_accepted: "Proposal accepted", proposal_declined: "Proposal declined",
 };
+const MS_STATUS = [["upcoming", "Upcoming"], ["current", "In progress"], ["done", "Done"]];
 
 function shell(active, counts, body) {
   const link = (hash, label, count) => `<a href="#${hash}" class="${active === hash ? "is-active" : ""}">${label}${count ? `<span class="count">${count}</span>` : ""}</a>`;
@@ -20,6 +23,8 @@ function shell(active, counts, body) {
     <nav class="admin__nav" aria-label="Admin">
       <h4>Workspace</h4>
       ${link("overview", "Overview")}
+      ${link("inquiries", "Inquiries", counts.inquiries)}
+      ${link("proposals", "Proposals", counts.accepted)}
       ${link("clients", "Clients & engagements")}
       ${link("drafts", "AI drafts", counts.review)}
       ${link("questionnaires", "Questionnaires")}
@@ -31,8 +36,12 @@ function shell(active, counts, body) {
 }
 
 async function counts() {
-  const drafts = await store.drafts();
-  return { review: drafts.filter((d) => d.status === "awaiting_review").length, drafts };
+  const [drafts, inquiries, proposals] = await Promise.all([store.drafts(), store.inquiries(), store.proposals()]);
+  return {
+    review: drafts.filter((d) => d.status === "awaiting_review").length, drafts,
+    inquiries: inquiries.filter((i) => i.status === "new").length, inquiryList: inquiries,
+    accepted: proposals.filter((p) => p.status === "accepted" && !p.engagement_id).length, proposalList: proposals,
+  };
 }
 
 function title(h, sub = "", actions = "") {
@@ -48,22 +57,27 @@ async function viewOverview(c) {
   const submitted = assignments.filter((a) => a.status === "submitted");
   const review = c.drafts.filter((d) => d.status === "awaiting_review");
   const engTitle = (id) => engagements.find((e) => e.id === id)?.title || "Engagement";
+  const fresh = c.inquiryList.filter((i) => i.status === "new");
+  const signed = c.proposalList.filter((p) => p.status === "accepted" && !p.engagement_id);
+  const live = c.proposalList.filter((p) => ["sent", "viewed"].includes(p.status));
   return title(`Good to see you, <em class="italic accent">Michael.</em>`, "What needs your attention across every engagement.") + `
     <div class="stat-row">
       <div class="stat"><b>${engagements.filter((e) => e.status === "active").length}</b><span>Active engagements</span></div>
+      <div class="stat stat--gold"><b>${fresh.length}</b><span>New inquiries</span></div>
+      <div class="stat"><b>${live.length}</b><span>Proposals out</span></div>
       <div class="stat stat--gold"><b>${review.length}</b><span>Drafts to review</span></div>
-      <div class="stat"><b>${submitted.length}</b><span>Questionnaires submitted</span></div>
-      <div class="stat"><b>${assignments.filter((a) => ["open", "reopened"].includes(a.status)).length}</b><span>Awaiting clients</span></div>
     </div>
     <div class="p-grid">
       <section class="p-card p-card--accent"><p class="p-kicker">Needs your attention</p>
-        ${review.length || submitted.length ? `<ul class="p-list">
+        ${review.length || submitted.length || fresh.length || signed.length ? `<ul class="p-list">
+          ${signed.map((p) => `<li class="p-row"><div><h2 class="p-item">Signed: ${esc(p.company || p.client_name || p.title)}</h2><p class="p-muted">${esc(p.title)} · ${esc(relTime(p.responded_at))}</p></div><a class="btn btn--navy btn--sm" href="#proposal=${esc(p.id)}">Open engagement</a></li>`).join("")}
+          ${fresh.map((i) => `<li class="p-row"><div><h2 class="p-item">New diagnostic: ${esc(i.company || i.name)}</h2><p class="p-muted">${esc(i.practices.join(", "))} · ${esc(relTime(i.created_at))}</p></div><a class="btn btn--ghost btn--sm" href="#inquiry=${esc(i.id)}">Read the brief</a></li>`).join("")}
           ${review.map((d) => `<li class="p-row"><div><h2 class="p-item">Draft ready: ${esc(engTitle(d.engagement_id))}</h2><p class="p-muted">${esc(relTime(d.created_at))}</p></div><a class="btn btn--navy btn--sm" href="#draft=${esc(d.id)}">Review draft</a></li>`).join("")}
           ${submitted.map((a) => `<li class="p-row"><div><h2 class="p-item">${esc(a.questionnaire?.title)}</h2><p class="p-muted">${esc(a.engagement.title)} · submitted ${esc(relTime(a.submitted_at))}</p></div><a class="btn btn--ghost btn--sm" href="#responses=${esc(a.id)}">View answers</a></li>`).join("")}
         </ul>` : `<p class="p-empty">You're all caught up.</p>`}
       </section>
       <section class="p-card"><p class="p-kicker">Recent activity</p>
-        ${activity.length ? `<ul class="p-list">${activity.slice(0, 12).map((a) => `<li><strong>${esc(ACTIVITY[a.kind] || a.kind)}</strong><p class="p-muted">${esc(engTitle(a.engagement_id))} · ${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+        ${activity.length ? `<ul class="p-list">${activity.slice(0, 12).map((a) => `<li><strong>${esc(ACTIVITY[a.kind] || a.kind)}</strong><p class="p-muted">${a.engagement_id ? `${esc(engTitle(a.engagement_id))} · ` : a.detail?.title ? `${esc(a.detail.title)} · ` : ""}${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
       </section>
     </div>`;
 }
@@ -94,9 +108,11 @@ async function viewClients() {
 }
 
 async function viewEngagement(id) {
-  const [eng, assignments, drafts, pubs, questionnaires, activity] = await Promise.all([
+  const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions] = await Promise.all([
     store.engagement(id), store.assignmentsFor(id), store.drafts(id), store.publications(id), store.questionnaires(), store.activity(id),
+    store.milestones(id), store.decisions(id),
   ]);
+  const localDT = (v) => { if (!v) return ""; const d = new Date(v); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
   const client = eng.client || {};
   return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + `
     <div class="draft-grid">
@@ -135,6 +151,36 @@ async function viewEngagement(id) {
         </section>
       </div>
       <div class="p-stack">
+        <section class="p-card p-card--navy"><p class="p-kicker">Client room</p>
+          <form class="p-form" id="room-form">
+            <div class="p-field"><label for="r-kick" style="color:var(--on-dark-muted)">Began</label><input class="p-input" id="r-kick" name="kickoff_date" type="date" value="${esc(eng.kickoff_date || "")}"></div>
+            <div class="p-field"><label for="r-meet" style="color:var(--on-dark-muted)">Next conversation</label><input class="p-input" id="r-meet" name="next_meeting_at" type="datetime-local" value="${esc(localDT(eng.next_meeting_at))}"></div>
+            <div class="p-field"><label for="r-note" style="color:var(--on-dark-muted)">Agenda the client sees</label><textarea class="p-textarea" id="r-note" name="next_meeting_note" rows="2">${esc(eng.next_meeting_note || "")}</textarea></div>
+            <div class="p-field"><label for="r-link" style="color:var(--on-dark-muted)">Video link (https)</label><input class="p-input" id="r-link" name="meeting_link" type="url" value="${esc(eng.meeting_link || "")}"></div>
+            <button class="btn btn--gold btn--sm" type="submit">Save</button>
+          </form>
+          <p style="margin-top:1rem;font-size:.85rem"><a class="link-on-dark" href="dashboard.html">See the client’s view</a> (opens your own room if you have none)</p>
+        </section>
+        <section class="p-card"><p class="p-kicker">Milestones</p>
+          ${milestones.length ? `<ul class="p-list">${milestones.map((m) => `<li class="p-row"><div><strong>${esc(m.title)}</strong><br><span class="p-muted">${esc(m.due_label || "")}</span></div>
+            <div class="btn-row" style="gap:.5rem"><select class="p-select p-select--sm" data-ms-status="${esc(m.id)}" aria-label="Status of ${esc(m.title)}">${MS_STATUS.map(([v, l]) => `<option value="${v}"${m.status === v ? " selected" : ""}>${l}</option>`).join("")}</select>
+            <button class="p-linkbtn" data-ms-delete="${esc(m.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">No milestones yet.</p>`}
+          <form class="p-form p-form--2" id="ms-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
+            <div class="p-field"><label for="ms-title">Milestone</label><input class="p-input" id="ms-title" name="title" required></div>
+            <div class="p-field"><label for="ms-when">When</label><input class="p-input" id="ms-when" name="due_label" placeholder="Week 6"></div>
+            <div class="p-span"><button class="btn btn--ghost btn--sm" type="submit">Add milestone</button></div>
+          </form>
+        </section>
+        <section class="p-card"><p class="p-kicker">Decision log</p>
+          ${decisions.length ? `<ul class="p-list">${decisions.map((d) => `<li><div class="p-row"><strong>${esc(d.decision)}</strong><button class="p-linkbtn" data-dec-delete="${esc(d.id)}">Remove</button></div><p class="p-muted">${esc(fmtDate(d.decided_on))}${d.owner ? ` · ${esc(d.owner)}` : ""}${d.rationale ? ` · ${esc(d.rationale)}` : ""}</p></li>`).join("")}</ul>` : `<p class="p-muted">Record decisions as they’re made. The client sees them with the reasons.</p>`}
+          <form class="p-form" id="dec-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
+            <div class="p-field"><label for="dec-what">Decision</label><input class="p-input" id="dec-what" name="decision" required></div>
+            <div class="p-field"><label for="dec-why">Why</label><textarea class="p-textarea" id="dec-why" name="rationale" rows="2"></textarea></div>
+            <div class="p-form p-form--2"><div class="p-field"><label for="dec-owner">Owner</label><input class="p-input" id="dec-owner" name="owner"></div>
+            <div class="p-field"><label for="dec-date">Date</label><input class="p-input" id="dec-date" name="decided_on" type="date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
+            <button class="btn btn--ghost btn--sm" type="submit">Record decision</button>
+          </form>
+        </section>
         <section class="p-card p-card--accent"><p class="p-kicker">Report context for the AI</p>
           <p class="p-muted">Private to you. Paste the report's key assumptions, figures and conclusions. Claude compares each answer against this to propose section updates.</p>
           <form class="p-form" id="context-form">
@@ -292,7 +338,11 @@ async function route() {
   try {
     const c = await counts();
     let body, active = key;
-    if (key === "clients") body = await viewClients();
+    if (key === "inquiries") body = await viewInquiries();
+    else if (key === "inquiry") { body = await viewInquiry(arg); active = "inquiries"; }
+    else if (key === "proposals") body = await viewProposals();
+    else if (key === "proposal") { body = await viewProposal(arg); active = "proposals"; }
+    else if (key === "clients") body = await viewClients();
     else if (key === "engagement") { body = await viewEngagement(arg); active = "clients"; }
     else if (key === "responses") { body = await viewResponses(arg); active = "clients"; }
     else if (key === "draft") { body = await viewDraft(arg); active = "drafts"; }
@@ -303,7 +353,7 @@ async function route() {
     window.scrollTo(0, 0);
   } catch (err) {
     console.error(err);
-    main.innerHTML = shell("", { review: 0 }, `<p class="p-empty">${esc(err.message)}</p>`);
+    main.innerHTML = shell("", { review: 0, inquiries: 0, accepted: 0 }, `<p class="p-empty">${esc(err.message)}</p>`);
   }
 }
 
@@ -317,7 +367,24 @@ main.addEventListener("submit", async (e) => {
   try {
     const hash = location.hash.slice(1);
     const engId = hash.startsWith("engagement=") ? hash.split("=")[1] : null;
-    if (form.id === "invite-form") {
+    if (await pipelineSubmit(form, route)) return;
+    if (form.id === "room-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const link = v("meeting_link");
+      if (link && !/^https:\/\//.test(link)) throw new Error("The video link should start with https://");
+      await store.updateEngagement(engId, { kickoff_date: v("kickoff_date") || null, next_meeting_at: v("next_meeting_at") ? new Date(v("next_meeting_at")).toISOString() : null, next_meeting_note: v("next_meeting_note") || null, meeting_link: link || null });
+      toast("Client room updated.");
+    } else if (form.id === "ms-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const existing = await store.milestones(engId);
+      await store.saveMilestone({ engagement_id: engId, position: existing.length + 1, title: v("title"), due_label: v("due_label") || null, status: "upcoming" });
+      route();
+    } else if (form.id === "dec-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      await store.addDecision({ engagement_id: engId, decision: v("decision"), rationale: v("rationale") || null, owner: v("owner") || null, decided_on: v("decided_on") || new Date().toISOString().slice(0, 10) });
+      toast("Decision recorded. The client sees it in their room.");
+      route();
+    } else if (form.id === "invite-form") {
       const r = await store.inviteClient(formData(form));
       toast(r.invited ? "Invitation sent." : "Engagement added for the existing client.");
       location.hash = `engagement=${r.engagement_id}`;
@@ -354,7 +421,12 @@ main.addEventListener("click", async (e) => {
   const t = e.target.closest("button, a");
   if (!t) return;
   try {
-    if (t.dataset.export) exportResponses(t.dataset.export);
+    if (await pipelineClick(t, route)) return;
+    if (t.dataset.msDelete) { await store.deleteMilestone(t.dataset.msDelete); route(); }
+    else if (t.dataset.decDelete) {
+      if (await confirmDialog({ title: "Remove this decision?", body: "<p>It disappears from the client's room.</p>", confirmLabel: "Remove" })) { await store.deleteDecision(t.dataset.decDelete); route(); }
+    }
+    else if (t.dataset.export) exportResponses(t.dataset.export);
     else if (t.dataset.reopen) { await store.setAssignmentStatus(t.dataset.reopen, "reopened"); toast("Reopened. The client can edit their answers again."); route(); }
     else if (t.dataset.complete) { await store.setAssignmentStatus(t.dataset.complete, "complete"); toast("Marked complete."); route(); }
     else if (t.dataset.regen) {
@@ -385,6 +457,13 @@ main.addEventListener("click", async (e) => {
       download("questionnaire-template.json", JSON.stringify(TEMPLATE, null, 2), "application/json");
     }
   } catch (err) { toast(err.message, true); t.disabled = false; }
+});
+
+main.addEventListener("change", async (e) => {
+  const sel = e.target.closest("[data-ms-status]");
+  if (!sel) return;
+  try { await store.saveMilestone({ id: sel.dataset.msStatus, status: sel.value }); toast("Milestone updated."); }
+  catch (err) { toast(err.message, true); }
 });
 
 (async () => {

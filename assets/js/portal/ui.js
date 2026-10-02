@@ -126,6 +126,9 @@ export function statusPill(status) {
     drafting: ["Drafting", "pill--gold"], awaiting_review: ["Awaiting review", "pill--gold"],
     published: ["Published", "pill--navy"], dismissed: ["Dismissed", ""], failed: ["Failed", "pill--red"],
     active: ["Active", "pill--teal"], archived: ["Archived", ""],
+    new: ["New", "pill--gold"], reviewed: ["Reviewed", ""], call_booked: ["Call booked", "pill--teal"], proposal: ["Proposal", "pill--navy"], closed: ["Closed", ""],
+    draft: ["Draft", ""], sent: ["Sent", "pill--teal"], viewed: ["Viewed", "pill--gold"], accepted: ["Accepted", "pill--navy"], declined: ["Declined", "pill--red"], withdrawn: ["Withdrawn", ""],
+    pending: ["Brief drafting", "pill--gold"], ready: ["Brief ready", "pill--teal"], skipped: ["No brief", ""],
   };
   const [label, cls] = map[status] || [status, ""];
   return `<span class="pill pill--dot ${cls}">${esc(label)}</span>`;

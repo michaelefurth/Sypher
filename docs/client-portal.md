@@ -1,6 +1,18 @@
 # Sypher Client Portal: setup and operation
 
-A private workspace at `/portal/` where clients answer your questions, and you review, analyse and publish.
+The path from first contact to finished work, in one system:
+
+```
+Contact page diagnostic ──► Claude's pre-call brief (private to you) ──► you reply and talk
+        │
+        ▼
+Private proposal page (/for/?p=<name>.<key>) ──► client chooses an option and signs
+        │
+        ▼
+Open the engagement ──► the client's room: milestones, decisions, next meeting, questions, updates
+```
+
+Inside an engagement, the portal at `/portal/` is where clients answer your questions, and you review, analyse and publish:
 
 ```
 Invite client ──► Assign questionnaire ──► Client answers (autosave, files, "don't know yet")
@@ -23,10 +35,15 @@ Nothing written by the AI reaches a client until you publish it.
 | `portal/*.html`, `assets/js/portal/`, `assets/css/portal.css` | The portal front end (static, served with the site) |
 | `assets/js/portal/config.js` | Supabase URL + anon key. **Empty = demo mode** with fictional data in the browser |
 | `supabase/migrations/20261001000000_client_portal.sql` | Database schema, row level security, storage bucket |
+| `supabase/migrations/20261002000000_bespoke_flow.sql` | Inquiries, proposals, milestones, decision log, meeting fields |
+| `contact.html`, `assets/js/diagnostic.js` | The four-step diagnostic that replaces the contact form |
+| `for/index.html`, `assets/js/proposal.js`, `assets/css/proposal.css` | The private proposal page clients read and sign |
+| `supabase/functions/submit-inquiry` | Public: stores a diagnostic, drafts your pre-call brief with Claude, emails you and the prospect |
+| `supabase/functions/proposal-response` | Public: emails you when a proposal is accepted or declined, and confirms to the signer |
 | `supabase/functions/invite-client` | Admin-only: invites a client by email and opens their engagement |
 | `supabase/functions/process-submission` | On submit: asks Claude for a draft update, emails you |
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
-| `supabase/tests/rls-test.mjs` | 31 automated security tests for the access rules |
+| `supabase/tests/rls-test.mjs` | 59 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets (e.g. the PCG file) live here, never in the repo |
 
 ---
@@ -35,7 +52,7 @@ Nothing written by the AI reaches a client until you publish it.
 
 ### 1. Create the Supabase project
 1. Sign up at [supabase.com](https://supabase.com) and create a project (the free tier is enough to start). Choose a US region.
-2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**.
+2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`.
 
 ### 2. Lock sign-in down to invited clients
 1. **Authentication → Sign In / Providers → Email:** enabled. Turn **off** "Allow new users to sign up". Clients join only by your invitation.
@@ -72,6 +89,10 @@ supabase secrets set \
 supabase functions deploy invite-client
 supabase functions deploy process-submission
 supabase functions deploy publish-update
+
+# These two are called by people who aren't signed in (prospects and proposal readers).
+supabase functions deploy submit-inquiry --no-verify-jwt
+supabase functions deploy proposal-response --no-verify-jwt
 ```
 
 ### 6. Connect the site
@@ -82,6 +103,22 @@ In `assets/js/portal/config.js`, paste **Project URL** and the **anon / publisha
 2. **Clients & engagements → Invite a client** (email, name, company, engagement title).
 3. Open the engagement and paste the report's key assumptions and conclusions into **Report context for the AI**. This is what Claude compares answers against.
 4. **Assign** the questionnaire with a due date and a short note. The client is emailed and sees it on sign-in.
+
+---
+
+## Diagnostic, proposals and client rooms
+
+**The diagnostic** (contact page). Four steps: the situation (up to three practices), two questions per practice, the shape of it (stage, team, timeline, budget), and contact details. Answers are kept in the visitor's tab until sent, so a refresh loses nothing. On submit, `submit-inquiry` stores it, emails the prospect a short confirmation, asks Claude for a pre-call brief (a summary, their most telling sentence, likely practices, questions to ask, fit concerns, a first step and a proposal outline) and emails you. A hidden field, a minimum fill time and a per-address limit keep bots out. Without Supabase configured, the page still works and offers to email the notes instead.
+
+**Inquiries** (admin). Read the brief and answers, reply with a pre-written email, keep private notes and a status, and **Start a proposal**: it's prefilled from the brief.
+
+**Proposals** (admin). Write the letter, the situation in their words, objectives, phases, milestones, two or three options with fees, terms and next steps. The terms start from a sensible default; match them to your engagement letter. **Mark as sent** makes the link live; **Email the link** opens a message from your own address. You can see when it was opened and how often. Withdrawing a proposal disables its link.
+
+**The proposal page** (`/for/?p=<name>.<key>`). No sign-in: the 40-character key in the link is the lock, and the page asks search engines not to index it. The client chooses an option, types their name as a signature and accepts, or declines with a note. You're emailed either way, and the signer gets a confirmation. A proposal past its "valid until" date can't be accepted. It prints cleanly to PDF.
+
+**Opening the engagement.** On an accepted proposal, **Open the engagement** invites the signer to the portal, creates the engagement, copies the milestones from the proposal and sets the start date.
+
+**The client room** (the client's dashboard). The engagement on a cover, a milestone track, what they need to complete, your updates, a decision log with reasons, the next conversation (with an add-to-calendar file) and your contact card. You manage milestones, decisions and the next meeting from the engagement page in admin. To show a direct line or a response promise on the contact card, fill in `phone` and `response_promise` in `assets/js/portal/config.js`.
 
 ---
 
@@ -150,7 +187,9 @@ Admin → Questionnaires → **Download template** gives you a starter file.
 
 ## Security model
 
-- **Clients see only their own engagements, questions, answers, files and published updates.** Another client's data is invisible to them, and the private report context and all AI drafts are admin-only.
+- **Prospects can't read anything.** Diagnostics are written by the `submit-inquiry` function with the service role; the table is admin-only.
+- **A proposal is readable only with its link**, through two database functions that return the client-facing fields and accept or decline. Drafts and withdrawn proposals return nothing; your own previews aren't counted as views.
+- **Clients see only their own engagements, questions, answers, files, milestones, decisions and published updates.** Another client's data is invisible to them, and the private report context and all AI drafts are admin-only.
 - Answers lock on submission; only you can reopen them.
 - Files go to a private storage bucket in per-engagement folders, served through short-lived signed links (5 minutes). The upload limit is 50 MB.
 - Clients can't change their own role. Sign-in is by one-time email link, for invited addresses only.

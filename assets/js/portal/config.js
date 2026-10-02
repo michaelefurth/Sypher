@@ -14,4 +14,7 @@ export const ADMIN_CONTACT = {
   name: "Michael Furth",
   title: "Managing Principal",
   email: "michael@sypher.solutions",
+  // Optional. Shown in each client's room when set.
+  phone: "",            // a direct line, e.g. "(505) 555-0100"
+  response_promise: "", // e.g. "Every message answered by Michael within one business day."
 };
