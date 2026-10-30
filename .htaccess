@@ -25,8 +25,10 @@ AddType application/manifest+json .webmanifest
   <FilesMatch "\.html$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
+  # Stylesheets and scripts are checked on every visit (a quick 304 when
+  # unchanged); pages link them with ?v=<hash>, so a deploy shows at once.
   <FilesMatch "\.(css|js)$">
-    Header set Cache-Control "public, max-age=86400"
+    Header set Cache-Control "no-cache"
   </FilesMatch>
   <FilesMatch "\.(webp|png|jpg|ico|woff2)$">
     Header set Cache-Control "public, max-age=2592000"

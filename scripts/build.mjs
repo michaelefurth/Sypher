@@ -4,8 +4,11 @@
 //   <!-- footer:start --> … <!-- footer:end -->                         from partials/footer.html
 //   <!-- problems-all:start --> … <!-- problems-all:end -->             full Problem Index (data/problems.json)
 //   <!-- problems-featured:start --> … <!-- problems-featured:end -->   featured rows only
+// It also stamps every stylesheet and script link with ?v=<content hash>, so a
+// deploy reaches visitors at once instead of waiting out their browser cache.
 // Run after editing a partial or the problem data:   node scripts/build.mjs
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, relative, dirname, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -69,13 +72,20 @@ ${rows(problems.filter((p) => p.featured), prefix)}
 }
 
 function pages(dir) {
-  const skip = new Set(["partials", "node_modules", ".git", "scripts", "assets", "data", "docs"]);
+  const skip = new Set(["partials", "node_modules", ".git", "scripts", "assets", "data", "docs", "email", "brand-src", "private", "supabase"]);
   return readdirSync(dir).flatMap((name) => {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) return skip.has(name) ? [] : pages(p);
     return name.endsWith(".html") ? [p] : [];
   });
 }
+
+const hashes = new Map();
+function version(path) {
+  if (!hashes.has(path)) hashes.set(path, createHash("sha256").update(readFileSync(join(root, path))).digest("hex").slice(0, 10));
+  return hashes.get(path);
+}
+const ASSET_LINK = /((?:href|src)=")((?:\.\.\/|\/)*assets\/(?:css|js)\/[\w\/.-]+\.(?:css|js))(?:\?v=[a-f0-9]+)?"/g;
 
 for (const file of pages(root)) {
   const rel = relative(root, file).split(sep).join("/");
@@ -86,8 +96,8 @@ for (const file of pages(root)) {
     header: partials.header, footer: partials.footer,
     "problems-all": problemIndex(prefix), "problems-featured": featured(prefix),
   };
-  let html = readFileSync(file, "utf8");
-  let changed = false;
+  const original = readFileSync(file, "utf8");
+  let html = original;
   for (const [name, tpl] of Object.entries(blocks)) {
     const re = new RegExp(`(<!-- ${name}:start -->)[\\s\\S]*?(<!-- ${name}:end -->)`);
     if (!re.test(html)) continue;
@@ -99,7 +109,7 @@ for (const file of pages(root)) {
       return current ? `<a class="nav__link" href="${href}" aria-current="page">` : m;
     });
     html = html.replace(re, () => `<!-- ${name}:start -->\n${out}\n<!-- ${name}:end -->`);
-    changed = true;
   }
-  if (changed) { writeFileSync(file, html); console.log("built", rel); }
+  html = html.replace(ASSET_LINK, (m, attr, path) => `${attr}${path}?v=${version(path.replace(/^(\.\.\/|\/)+/, ""))}"`);
+  if (html !== original) { writeFileSync(file, html); console.log("built", rel); }
 }
