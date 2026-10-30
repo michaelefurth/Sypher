@@ -260,6 +260,11 @@ ul { margin: 0; padding: 0; list-style: none; }
   .nav__list { flex-direction: column; gap: 1.6rem; }
   .nav__link { font-family: var(--serif); font-size: 2rem; letter-spacing: 0; text-transform: none; }
   body.nav-open { overflow: hidden; }
+  /* A blur filter on the header would trap the fixed menu inside the header's
+     86px box (filters create a containing block), so the menu could only show
+     its first link. Drop the blur while the menu is open; the panel is opaque. */
+  body.nav-open .site-header { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--paper); }
+  .nav { height: calc(100vh - 86px); height: calc(100dvh - 86px); }
 }
 
 /* ---------- Hero ---------- */
