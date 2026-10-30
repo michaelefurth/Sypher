@@ -50,11 +50,14 @@
      Header: scrolled state, hide on scroll down / reveal on scroll up
      --------------------------------------------------------------------- */
   var header = document.querySelector(".site-header");
+  var heroEl = document.querySelector(".hero");
   var lastY = window.scrollY;
   var onScroll = function () {
     var y = window.scrollY;
     if (header) {
       header.classList.toggle("is-scrolled", y > 8);
+      // On phones the home hero is navy; the header matches it until the hero has passed.
+      if (heroEl) header.classList.toggle("is-past-hero", heroEl.getBoundingClientRect().bottom < header.offsetHeight + 8);
       var goingDown = y > lastY + 4;
       var goingUp = y < lastY - 4;
       if (goingDown && y > 400) header.classList.add("is-hidden");

@@ -1045,3 +1045,41 @@ html.has-motion .puzzle__progress { display: flex; }
 .nav__portal:hover { color: var(--teal); }
 @media (max-width: 1180px) { .nav__portal { font-size: 0.75rem; } }
 .nav__link, .nav__portal, .nav__cta { white-space: nowrap; }
+
+/* ---------- Home hero on phones: an opening plate ----------
+   Navy ground, the emblem as a glowing crest, the headline in cream and gold,
+   and the call to action inside the first screen. The header joins the plate
+   until the hero has scrolled past. */
+@media (max-width: 860px) {
+  .hero {
+    background: radial-gradient(130% 62% at 50% 16%, #15495C 0%, #0D3343 42%, var(--navy-deep) 100%);
+    color: var(--on-dark-muted); text-align: center;
+    min-height: calc(100svh - 86px); justify-content: center;
+    padding-block: 1.25rem 2.75rem;
+  }
+  .hero__grid { gap: 1.1rem; justify-items: center; }
+  .hero__copy { display: flex; flex-direction: column; align-items: center; }
+  .hero__art { width: min(36vw, 150px); }
+  .hero__art img { filter: drop-shadow(0 14px 34px rgba(0, 0, 0, 0.45)); }
+  .hero__art::before { inset: 0; background: radial-gradient(closest-side, rgba(212, 180, 131, 0.3), transparent 72%); filter: blur(14px); }
+  .hero .eyebrow { margin: 0 0 1rem; justify-content: center; color: var(--champagne); }
+  .hero .eyebrow::before { content: ""; flex: 0 0 2.25rem; height: 1px; background: currentColor; opacity: 0.5; }
+  .hero .eyebrow::after { flex-basis: 2.25rem; opacity: 0.5; }
+  .hero__title { font-size: clamp(2.3rem, 9.6vw, 3rem); line-height: 1.02; color: var(--on-dark); }
+  .hero__title .accent { color: var(--champagne); }
+  .hero__sub { margin-top: 1rem; max-width: 32ch; font-size: 1rem; line-height: 1.6; color: var(--on-dark-muted); }
+  .hero__more { display: none; }
+  .hero .btn-row { margin-top: 1.5rem; width: 100%; flex-direction: column; align-items: center; gap: 1rem; }
+  .hero .btn--navy { width: 100%; max-width: 22rem; justify-content: center; background: var(--champagne); border-color: var(--champagne); color: var(--navy); }
+  .hero .btn--navy:hover { background: #E2C79C; border-color: #E2C79C; }
+  .hero .link-arrow { color: var(--on-dark); }
+  body:has(.hero) .site-header:not(.is-past-hero) { background: var(--navy-deep); border-bottom-color: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  body:has(.hero) .site-header:not(.is-past-hero) .wordmark__sub { color: var(--champagne); }
+  body:has(.hero) .site-header:not(.is-past-hero) .wordmark__name { color: var(--champagne); }
+  body:has(.hero) .site-header:not(.is-past-hero) .nav-toggle { color: var(--champagne); }
+}
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  @media (max-width: 860px) {
+    body:has(.hero) .site-header:not(.is-past-hero) .wordmark__name { background-image: linear-gradient(180deg, #F3DDB2 0%, #C99B5E 45%, #E8C98F 68%, #A97A3E 100%); }
+  }
+}
