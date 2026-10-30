@@ -29,7 +29,7 @@ function shell(active, counts, body) {
       ${link("drafts", "AI drafts", counts.review)}
       ${link("questionnaires", "Questionnaires")}
       <h4>Help</h4>
-      <a href="../docs/client-portal.md" target="_blank" rel="noopener">Setup guide</a>
+      <a href="https://github.com/michaelefurth/Sypher/blob/HEAD/docs/client-portal.md" target="_blank" rel="noopener">Setup guide</a>
     </nav>
     <div class="admin__main">${body}</div>
   </div>`;

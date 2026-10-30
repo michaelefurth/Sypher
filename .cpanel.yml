@@ -1,0 +1,11 @@
+---
+# cPanel Git deployment: copies the public website into public_html.
+# Supabase code, docs, brand masters, build scripts and partials stay in the
+# repository only. Run from cPanel → Git Version Control → Manage →
+# Pull or Deploy → "Deploy HEAD Commit".
+deployment:
+  tasks:
+    - export DEPLOYPATH=/home/syphsevs/public_html/
+    - /bin/cp index.html about.html approach.html contact.html services.html solutions.html work.html privacy.html 404.html $DEPLOYPATH
+    - /bin/cp favicon.ico robots.txt sitemap.xml site.webmanifest .htaccess $DEPLOYPATH
+    - /bin/cp -R assets for insights portal $DEPLOYPATH

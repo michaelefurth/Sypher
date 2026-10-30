@@ -44,7 +44,7 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/process-submission` | On submit: asks Claude for a draft update, emails you |
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
 | `supabase/tests/rls-test.mjs` | 59 automated security tests for the access rules |
-| `private/` | Git-ignored. Client question sets (e.g. the PCG file) live here, never in the repo |
+| `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
 
@@ -99,7 +99,7 @@ supabase functions deploy proposal-response --no-verify-jwt
 In `assets/js/portal/config.js`, paste **Project URL** and the **anon / publishable key** (Project Settings → API). The anon key is designed to be public; the database rules protect the data. Commit and deploy the site. The demo banner disappears and sign-in switches to email links.
 
 ### 7. First engagement
-1. Sign in at `/portal/` → **Questionnaires → Import** → choose `private/pcg-follow-up-questions.json` (59 questions, sections A–J, with the rerun and Gate 1 flags).
+1. Sign in at `/portal/` → **Questionnaires → Import** → choose the client's question set from `private/` (a JSON file in the format below).
 2. **Clients & engagements → Invite a client** (email, name, company, engagement title).
 3. Open the engagement and paste the report's key assumptions and conclusions into **Report context for the AI**. This is what Claude compares answers against.
 4. **Assign** the questionnaire with a due date and a short note. The client is emailed and sees it on sign-in.
