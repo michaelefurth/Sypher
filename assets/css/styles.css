@@ -267,6 +267,58 @@ ul { margin: 0; padding: 0; list-style: none; }
   .nav { height: calc(100vh - 86px); height: calc(100dvh - 86px); }
 }
 
+/* ---------- Menu panel (phones, tablets, narrow windows) ----------
+   One navy surface with the header: large serif links, each with a note on
+   what's behind it, the current page marked with a gold compass point, and
+   the emblem as a faint watermark. Links rise in one after another. */
+.nav__note, .nav__extra { display: none; }
+@media (max-width: 1180px) {
+  body.nav-open .site-header { background: var(--navy-deep); border-bottom-color: var(--rule-dark); }
+  body.nav-open .wordmark__sub { color: var(--champagne); }
+  body.nav-open .wordmark__name { color: var(--champagne); }
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    body.nav-open .wordmark__name { background-image: linear-gradient(180deg, #F3DDB2 0%, #C99B5E 45%, #E8C98F 68%, #A97A3E 100%); }
+  }
+  body.nav-open .nav-toggle { color: var(--champagne); }
+  .nav {
+    background:
+      linear-gradient(rgba(7, 31, 41, 0.9), rgba(7, 31, 41, 0.9)),
+      url("../img/sypher-mark-480.webp") right -22vw bottom -3rem / min(86vw, 460px) auto no-repeat,
+      var(--navy-deep);
+    color: var(--on-dark-muted); gap: 2rem; padding-block: 1.5rem 2.5rem;
+  }
+  .nav__list { width: 100%; gap: 0; border-top: 1px solid var(--rule-dark); }
+  .nav__list li { border-bottom: 1px solid var(--rule-dark); }
+  .nav__link { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding-block: 1rem 0.9rem; font-size: clamp(1.85rem, 1.5rem + 1.6vw, 2.4rem); line-height: 1.1; color: var(--on-dark); }
+  .nav__link::after { display: none; }
+  .nav__link:hover, .nav__link:focus-visible { color: var(--champagne); }
+  .nav__link:focus-visible { outline: 1px solid var(--champagne); outline-offset: 4px; }
+  .nav__label { display: inline-flex; align-items: center; }
+  .nav__link[aria-current="page"] .nav__label::before { content: ""; width: 7px; height: 7px; margin-right: 0.85rem; background: var(--champagne); transform: rotate(45deg); flex: none; }
+  .nav__link[aria-current="page"] { color: var(--champagne); }
+  .nav__note { display: block; font-family: var(--sans); font-size: 0.6rem; line-height: 1.4; letter-spacing: 0.24em; text-transform: uppercase; text-align: right; color: var(--champagne); opacity: 0.8; white-space: normal; max-width: 9.5rem; }
+  .nav .nav__cta { order: 2; width: 100%; max-width: 26rem; justify-content: center; padding: 1.05rem 1.4rem; background: var(--champagne); border-color: var(--champagne); color: var(--navy); }
+  .nav .nav__cta:hover { background: #E2C79C; border-color: #E2C79C; color: var(--navy); }
+  .nav .nav__portal { order: 3; font-size: 0.72rem; color: var(--on-dark-muted); }
+  .nav .nav__portal:hover { color: var(--champagne); }
+  .nav__extra { order: 4; display: grid; gap: 0.35rem; margin-top: auto; padding-top: 1.25rem; font-size: 0.8rem; letter-spacing: 0.06em; color: var(--on-dark-muted); }
+  .nav__extra a { font-family: var(--serif); font-size: 1.3rem; letter-spacing: 0.01em; color: var(--on-dark); }
+  .nav__extra a:hover { color: var(--champagne); }
+}
+@media (max-width: 1180px) and (prefers-reduced-motion: no-preference) {
+  .nav__list li, .nav__cta, .nav__portal, .nav__extra { opacity: 0; transform: translateY(14px); transition: opacity .55s var(--ease), transform .55s var(--ease); }
+  .nav.is-open .nav__list li, .nav.is-open .nav__cta, .nav.is-open .nav__portal, .nav.is-open .nav__extra { opacity: 1; transform: none; }
+  .nav.is-open .nav__list li:nth-child(1) { transition-delay: .06s; }
+  .nav.is-open .nav__list li:nth-child(2) { transition-delay: .11s; }
+  .nav.is-open .nav__list li:nth-child(3) { transition-delay: .16s; }
+  .nav.is-open .nav__list li:nth-child(4) { transition-delay: .21s; }
+  .nav.is-open .nav__list li:nth-child(5) { transition-delay: .26s; }
+  .nav.is-open .nav__list li:nth-child(6) { transition-delay: .31s; }
+  .nav.is-open .nav__cta { transition-delay: .38s; }
+  .nav.is-open .nav__portal { transition-delay: .43s; }
+  .nav.is-open .nav__extra { transition-delay: .48s; }
+}
+
 /* ---------- Hero ---------- */
 .hero { position: relative; padding-block: clamp(3.5rem, 7vw, 6.5rem) clamp(4rem, 8vw, 7rem); overflow: hidden; }
 .hero__grid { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: clamp(2rem, 5vw, 5rem); align-items: center; }
