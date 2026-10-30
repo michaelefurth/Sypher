@@ -10,7 +10,7 @@ body.portal main { flex: 1; }
 /* Header */
 .p-header { background: var(--navy); color: var(--on-dark); position: sticky; top: 0; z-index: 40; }
 .p-header__inner { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; min-height: 74px; }
-.p-header .wordmark__icon { width: 34px; height: 44px; }
+.p-header .wordmark__icon { width: 42px; height: 44px; }
 .p-header__label { font-size: 0.66rem; letter-spacing: 0.32em; text-transform: uppercase; color: var(--champagne); padding-left: 1.25rem; margin-left: 1.25rem; border-left: 1px solid var(--rule-dark); }
 .p-header__brand { display: flex; align-items: center; }
 .p-header__nav { display: flex; align-items: center; gap: 1.5rem; font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase; }
@@ -273,7 +273,7 @@ body.portal main { flex: 1; }
 .room-meet__actions { display: flex; align-items: center; gap: 1.25rem; margin-top: 1.25rem; flex-wrap: wrap; }
 .room-meet__cal { color: var(--champagne); }
 .room-principal__id { display: flex; gap: 1rem; align-items: center; }
-.room-principal__mono { flex: none; width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-family: var(--serif); font-size: 1.35rem; color: var(--champagne); background: var(--navy); border: 1px solid var(--champagne-deep); letter-spacing: 0.04em; }
+.room-principal__photo { flex: none; width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 1px solid var(--champagne-deep); box-shadow: 0 0 0 4px #fff, 0 0 0 5px rgba(184, 149, 94, 0.35); }
 .room-principal__lines { list-style: none; margin: 1.25rem 0 0; padding: 1rem 0 0; border-top: 1px solid var(--rule); display: grid; gap: 0.35rem; }
 .room-principal__lines a { color: var(--teal); }
 .room-principal__promise { margin-top: 1rem; font-family: var(--serif); font-style: italic; font-size: 1.1rem; color: var(--navy); }
@@ -313,3 +313,6 @@ body.portal main { flex: 1; }
 
 h2.p-kicker { font-family: var(--sans); font-weight: 450; line-height: 1.5; color: var(--teal); }
 .p-card--navy h2.p-kicker { color: var(--champagne); }
+
+.login__logo { display: block; width: clamp(150px, 16vw, 210px); }
+.login__logo img { width: 100%; height: auto; filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.35)); }

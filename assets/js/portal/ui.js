@@ -71,7 +71,7 @@ export function confirmDialog({ title, body, confirmLabel = "Confirm", cancelLab
   });
 }
 
-const ICON = `<img class="wordmark__icon" src="../assets/img/sypher-mark-sm.webp" alt="" width="34" height="44">`;
+const ICON = `<img class="wordmark__icon" src="../assets/img/sypher-mark-sm.webp" alt="" width="46" height="48">`;
 
 export function renderChrome(session, { active = "", admin = false } = {}) {
   const header = document.getElementById("p-header");

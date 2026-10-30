@@ -95,7 +95,7 @@ function render() {
   ${isDemo ? `<p class="prop-demo"><strong>Demo mode</strong> A fictional sample, saved only in this browser.</p>` : ""}
   ${p.status === "draft" ? `<p class="prop-demo"><strong>Draft preview</strong> Only you can see this. The client sees it once it’s marked as sent.</p>` : ""}
   <section class="prop-cover">
-    <img class="prop-cover__mark" src="../assets/img/sypher-mark-480.webp" alt="" width="375" height="483">
+    <img class="prop-cover__mark" src="../assets/img/sypher-mark-480.webp" alt="" width="375" height="388">
     <div class="container">
       <p class="prop-cover__kicker">Proposal${who ? ` · Prepared for ${esc(who)}` : ""}</p>
       <h1 class="prop-cover__title">${esc(p.title)}</h1>
@@ -111,7 +111,7 @@ function render() {
   ${c.letter ? `<section class="prop-sec prop-letter"><div class="container container--narrow">
     <p class="eyebrow">A note from Michael</p>
     <div class="prop-letter__body">${letterParas.map((x) => `<p>${esc(x).replace(/\n/g, "<br>")}</p>`).join("")}</div>
-    <p class="prop-letter__sign">Michael Furth</p><p class="prop-letter__role">Managing Principal, Sypher Solutions</p>
+    <div class="prop-letter__byline"><img class="prop-letter__photo" src="../assets/img/michael-furth-avatar.webp" alt="" width="72" height="72"><div><p class="prop-letter__sign">Michael Furth</p><p class="prop-letter__role">Managing Principal, Sypher Solutions</p></div></div>
   </div></section>` : ""}
 
   ${c.situation_quote || c.situation ? `<section class="prop-sec prop-sec--stone"><div class="container prop-two">

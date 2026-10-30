@@ -59,7 +59,7 @@ function principalCard() {
   const c = ADMIN_CONTACT;
   return `<section class="p-card room-principal">
     <h2 class="p-kicker">Your principal</h2>
-    <div class="room-principal__id"><span class="room-principal__mono" aria-hidden="true">MF</span>
+    <div class="room-principal__id"><img class="room-principal__photo" src="../assets/img/michael-furth-avatar.webp" alt="" width="64" height="64">
       <div><h3>${esc(c.name)}</h3><p class="p-muted">${esc(c.title)}, Sypher Solutions</p></div></div>
     <ul class="room-principal__lines">
       <li><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></li>
@@ -105,7 +105,7 @@ async function render() {
 
   main.innerHTML = blocks.map(({ eng, assignments, pubs, files, milestones, decisions }, i) => `
   <section class="room-cover" aria-labelledby="eng-${esc(eng.id)}">
-    <img class="room-cover__mark" src="../assets/img/sypher-mark-480.webp" alt="" width="375" height="483">
+    <img class="room-cover__mark" src="../assets/img/sypher-mark-480.webp" alt="" width="375" height="388">
     <div class="p-shell room-cover__inner">
       <p class="room-cover__kicker">Client room${session.profile.company ? ` · ${esc(session.profile.company)}` : ""}</p>
       ${i === 0 ? `<p class="room-cover__hello">${hello}</p>` : ""}

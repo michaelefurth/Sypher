@@ -172,10 +172,15 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 /* Wordmark */
 .wordmark { display: inline-flex; align-items: center; gap: 0.85rem; color: var(--navy); }
-.wordmark__icon { width: 44px; height: 44px; object-fit: contain; }
+.wordmark__icon { width: 46px; height: 48px; object-fit: contain; }
 .wordmark__text { display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.wordmark__name { font-family: var(--serif); font-size: 1.65rem; font-weight: 500; letter-spacing: 0.06em; }
-.wordmark__sub { font-family: var(--sans); font-size: 0.56rem; letter-spacing: 0.52em; margin-top: 0.3rem; padding-left: 0.52em; color: var(--teal); text-transform: uppercase; font-weight: 450; }
+.wordmark__name { font-family: var(--serif); font-size: 1.65rem; font-weight: 500; letter-spacing: 0.06em; color: #7A5A2E; }
+/* The name takes the logo's brushed-gold finish where the browser supports it. */
+@supports ((-webkit-background-clip: text) or (background-clip: text)) {
+  .wordmark__name { background: linear-gradient(180deg, #A98149 0%, #6E4F25 48%, #9B7440 70%, #5E431F 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .wordmark--light .wordmark__name { background-image: linear-gradient(180deg, #F3DDB2 0%, #C99B5E 45%, #E8C98F 68%, #A97A3E 100%); }
+}
+.wordmark__sub { font-family: var(--sans); font-size: 0.56rem; letter-spacing: 0.52em; margin-top: 0.3rem; padding-left: 0.52em; color: var(--bronze); text-transform: uppercase; font-weight: 450; }
 .wordmark--light { color: var(--on-dark); }
 .wordmark--light .wordmark__sub { color: var(--champagne); }
 .wordmark--light .wordmark__icon { mix-blend-mode: normal; }
@@ -397,7 +402,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 /* ---------- Principal ---------- */
 .principal { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: clamp(2.5rem, 6vw, 6rem); align-items: center; }
 .principal__frame { position: relative; aspect-ratio: 4 / 5; background: var(--navy); overflow: hidden; }
-.principal__frame img { width: 100%; height: 100%; object-fit: cover; }
+.principal__frame img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 30%; }
 .principal__frame::after { content: ""; position: absolute; inset: 14px; border: 1px solid rgba(212, 180, 131, 0.45); pointer-events: none; }
 .principal__caption { margin-top: 1rem; display: flex; gap: 1rem; align-items: baseline; }
 .principal__caption strong { font-family: var(--serif); font-weight: 400; font-size: 1.45rem; color: var(--ink); }
@@ -574,7 +579,9 @@ h1, h2, h3, h4, .lede, .prose blockquote { font-kerning: normal; font-variant-li
 /* Colophon: the small note at the foot of a well-made book. */
 .footer__colophon { max-width: 46rem; margin: 0 0 1.75rem; font-size: var(--fs-xs); line-height: 1.7; color: var(--on-dark-muted); opacity: 0.85; }
 .footer__colophon em { font-family: var(--serif); font-size: 1.15em; color: var(--champagne); }
-.article-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; font-size: var(--fs-xs); letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); margin-top: 2rem; }
+.article-meta__by { display: inline-flex; align-items: center; gap: 0.75rem; }
+.article-meta__avatar { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--champagne); object-fit: cover; }
+.article-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; font-size: var(--fs-xs); letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); margin-top: 2rem; }
 .breadcrumb { font-size: var(--fs-xs); letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); margin-bottom: 2rem; }
 .breadcrumb a { color: var(--teal); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(30, 127, 122, 0.4); }
 .breadcrumb span { margin-inline: 0.6rem; color: var(--champagne-deep); }
