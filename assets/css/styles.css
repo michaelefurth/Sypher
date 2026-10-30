@@ -1059,7 +1059,7 @@ html.has-motion .puzzle__progress { display: flex; }
   }
   .hero__grid { gap: 1.1rem; justify-items: center; }
   .hero__copy { display: flex; flex-direction: column; align-items: center; }
-  .hero__art { width: min(36vw, 150px); }
+  .hero__art { width: min(76vw, 300px); }
   .hero__art img { filter: drop-shadow(0 14px 34px rgba(0, 0, 0, 0.45)); }
   .hero__art::before { inset: 0; background: radial-gradient(closest-side, rgba(212, 180, 131, 0.3), transparent 72%); filter: blur(14px); }
   .hero .eyebrow { margin: 0 0 1rem; justify-content: center; color: var(--champagne); }
@@ -1067,7 +1067,7 @@ html.has-motion .puzzle__progress { display: flex; }
   .hero .eyebrow::after { flex-basis: 2.25rem; opacity: 0.5; }
   .hero__title { font-size: clamp(2.3rem, 9.6vw, 3rem); line-height: 1.02; color: var(--on-dark); }
   .hero__title .accent { color: var(--champagne); }
-  .hero__sub { margin-top: 1rem; max-width: 32ch; font-size: 1rem; line-height: 1.6; color: var(--on-dark-muted); }
+  .hero__sub { margin-top: 0.9rem; max-width: 38ch; font-size: 1rem; line-height: 1.6; color: var(--on-dark-muted); }
   .hero__more { display: none; }
   .hero .btn-row { margin-top: 1.5rem; width: 100%; flex-direction: column; align-items: center; gap: 1rem; }
   .hero .btn--navy { width: 100%; max-width: 22rem; justify-content: center; background: var(--champagne); border-color: var(--champagne); color: var(--navy); }
@@ -1082,4 +1082,42 @@ html.has-motion .puzzle__progress { display: flex; }
   @media (max-width: 860px) {
     body:has(.hero) .site-header:not(.is-past-hero) .wordmark__name { background-image: linear-gradient(180deg, #F3DDB2 0%, #C99B5E 45%, #E8C98F 68%, #A97A3E 100%); }
   }
+}
+
+/* ---------- Hero compass ----------
+   The emblem at the centre of a working compass: eight points, eight practices.
+   Names are set on two arcs so all of them read upright; the degree bezel
+   turns slowly. Each name links to its practice. */
+.compass { position: relative; aspect-ratio: 1; max-width: 100%; }
+.compass__dial { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.compass .compass__emblem { position: absolute; left: 19%; top: 18.5%; width: 62%; height: auto; }
+.compass__ring { fill: none; stroke: var(--champagne-deep); stroke-width: 0.7; opacity: 0.75; }
+.compass__ring--inner { opacity: 0.4; }
+.compass__ticks { fill: none; stroke: var(--champagne-deep); stroke-width: 6; stroke-dasharray: 0.9 11.928; opacity: 0.55; }
+.compass__ticks--major { stroke-width: 9; stroke-dasharray: 1.2 36.89; opacity: 0.85; }
+.compass__marks rect { fill: var(--champagne-deep); }
+.compass__marks .compass__north { fill: var(--teal); }
+.compass__point text { font-family: var(--sans); font-size: 9.5px; font-weight: 500; letter-spacing: 2.6px; text-transform: uppercase; fill: var(--bronze); transition: fill .3s var(--ease); }
+.compass__point:hover text, .compass__point:focus-visible text { fill: var(--teal); }
+.compass__point:focus-visible { outline: none; }
+.compass__point:focus-visible text { text-decoration: underline; }
+@media (prefers-reduced-motion: no-preference) {
+  .compass__bezel { transform-box: fill-box; transform-origin: center; animation: compass-turn 240s linear infinite; }
+  .compass__point { animation: compass-in .9s var(--ease) both; }
+  .compass__point:nth-of-type(1) { animation-delay: .35s; } .compass__point:nth-of-type(2) { animation-delay: .45s; }
+  .compass__point:nth-of-type(3) { animation-delay: .55s; } .compass__point:nth-of-type(4) { animation-delay: .65s; }
+  .compass__point:nth-of-type(5) { animation-delay: .75s; } .compass__point:nth-of-type(6) { animation-delay: .85s; }
+  .compass__point:nth-of-type(7) { animation-delay: .95s; } .compass__point:nth-of-type(8) { animation-delay: 1.05s; }
+}
+@keyframes compass-turn { to { transform: rotate(360deg); } }
+@keyframes compass-in { from { opacity: 0; } to { opacity: 1; } }
+@media (max-width: 860px) {
+  .hero .eyebrow { display: none; }
+  .compass__ring, .compass__ticks { stroke: var(--champagne); }
+  .compass__marks rect { fill: var(--champagne); }
+  .compass__marks .compass__north { fill: #6CC6BE; }
+  .compass__point text { fill: var(--champagne); font-size: 10.5px; letter-spacing: 2.4px; }
+  .compass__point:hover text, .compass__point:focus-visible text { fill: var(--on-dark); }
+  .hero__title { font-size: clamp(1.9rem, 8.4vw, 2.6rem); }
+  .hero__title span { white-space: nowrap; }
 }

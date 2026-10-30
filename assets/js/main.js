@@ -47,6 +47,40 @@
   }
 
   /* ---------------------------------------------------------------------
+     Decipher: each line of a heading starts as scrambled letters and
+     resolves left to right. Screen readers get the real text at once.
+     --------------------------------------------------------------------- */
+  function decipher(el) {
+    var pool = "abcdefghijklmnopqrstuvwxyz";
+    el.setAttribute("aria-label", el.textContent.replace(/\s+/g, " ").trim());
+    var jobs = Array.prototype.slice.call(el.children).map(function (line, n) {
+      line.setAttribute("aria-hidden", "true");
+      return { line: line, text: line.textContent, start: n * 420 };
+    });
+    var t0 = performance.now(), last = -1;
+    var paint = function (t) {
+      var done = true;
+      jobs.forEach(function (j) {
+        var out = "";
+        for (var i = 0; i < j.text.length; i++) {
+          var ch = j.text.charAt(i);
+          if (ch === " " || t >= j.start + 240 + i * 40) out += ch;
+          else { out += pool.charAt((Math.random() * pool.length) | 0); done = false; }
+        }
+        j.line.textContent = out;
+      });
+      return done;
+    };
+    paint(0);
+    var frame = function (now) {
+      if (now - last < 50) { requestAnimationFrame(frame); return; }
+      last = now;
+      if (!paint(now - t0)) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------------------------------------------------------------
      Header: scrolled state, hide on scroll down / reveal on scroll up
      --------------------------------------------------------------------- */
   var header = document.querySelector(".site-header");
@@ -136,7 +170,9 @@
     /* Hero entrance ---------------------------------------------------- */
     var heroTitle = document.querySelector("[data-split-lines]");
     var heroTl = gsap.timeline({ defaults: { ease: "power4.out" }, delay: 0.15 });
-    if (heroTitle && window.SplitText) {
+    if (heroTitle && window.matchMedia("(max-width: 860px)").matches) {
+      decipher(heroTitle); // phones: the headline decodes, letter by letter
+    } else if (heroTitle && window.SplitText) {
       var split = new window.SplitText(heroTitle, { type: "lines", mask: "lines", linesClass: "line", tag: "span", aria: "none" });
       heroTl.from(split.lines, { yPercent: 115, duration: 1.4, stagger: 0.14 }, 0);
     }
