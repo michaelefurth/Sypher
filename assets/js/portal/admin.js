@@ -1,7 +1,7 @@
 // Admin console for the Managing Principal.
 // Routes (hash): #overview · #inquiries · #inquiry=<id> · #proposals · #proposal=<id>
 //                #clients · #engagement=<id> · #responses=<assignmentId> · #draft=<id> · #questionnaires
-import { store, isDemo, progressOf } from "./store.js";
+import { store, progressOf } from "./store.js";
 import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, statusPill, progressBar, download } from "./ui.js";
 import { viewInquiries, viewInquiry, viewProposals, viewProposal, pipelineSubmit, pipelineClick } from "./admin-pipeline.js";
 
@@ -102,7 +102,7 @@ async function viewClients() {
           <div class="p-field"><label for="i-title">Engagement title</label><input class="p-input" id="i-title" name="engagement_title" required placeholder="e.g. Business Feasibility Study"></div>
           <div class="p-field"><label for="i-summary">Summary the client will see</label><textarea class="p-textarea" id="i-summary" name="engagement_summary" rows="3"></textarea></div>
           <button class="btn btn--navy btn--sm" type="submit">Send invitation</button>
-          <p class="p-muted">${isDemo ? "Demo mode: no email is sent." : "They'll receive a secure link to set up their access."}</p>
+          <p class="p-muted">They'll receive a secure link to set up their access.</p>
         </form></section>
     </div>`;
 }
@@ -431,9 +431,9 @@ main.addEventListener("click", async (e) => {
     else if (t.dataset.complete) { await store.setAssignmentStatus(t.dataset.complete, "complete"); toast("Marked complete."); route(); }
     else if (t.dataset.regen) {
       t.disabled = true;
-      const id = await store.regenerateDraft(t.dataset.regen);
-      toast(isDemo ? "Sample draft created." : "Claude is drafting. You'll get an email when it's ready.");
-      if (isDemo) location.hash = `draft=${id}`; else route();
+      await store.regenerateDraft(t.dataset.regen);
+      toast("Claude is drafting. You'll get an email when it's ready.");
+      route();
     } else if (t.dataset.dismiss) {
       if (await confirmDialog({ title: "Dismiss this draft?", body: "<p>It won't be sent. You can generate a new one at any time.</p>", confirmLabel: "Dismiss" })) { await store.dismissDraft(t.dataset.dismiss); route(); }
     } else if (t.hasAttribute("data-copy")) {

@@ -1,6 +1,6 @@
 // Admin: the path from first contact to signed work.
 // Routes: #inquiries · #inquiry=<id> · #proposals · #proposal=<id>
-import { store, isDemo, proposalLink, slugify, DEFAULT_TERMS } from "./store.js";
+import { store, proposalLink, slugify, DEFAULT_TERMS } from "./store.js";
 import { esc, paragraphs, fmtDate, relTime, toast, confirmDialog, statusPill } from "./ui.js";
 
 const MODELS = [["fixed", "Fixed fee"], ["retainer", "Monthly retainer"], ["advisory", "Advisory"]];
@@ -284,7 +284,7 @@ async function openEngagement(p, route) {
   if (!email) throw new Error("Add the client’s email to the proposal first.");
   const ok = await confirmDialog({
     title: "Open the engagement?",
-    body: `<p>This creates the client room for <strong>${esc(p.company || p.client_name || email)}</strong>${isDemo ? "" : ` and emails ${esc(email)} a sign-in link`}. Milestones are copied from the proposal.</p>`,
+    body: `<p>This creates the client room for <strong>${esc(p.company || p.client_name || email)}</strong> and emails ${esc(email)} a sign-in link. Milestones are copied from the proposal.</p>`,
     confirmLabel: "Open engagement",
   });
   if (!ok) return;

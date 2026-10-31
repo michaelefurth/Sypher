@@ -1,6 +1,6 @@
 // A private proposal, opened from the link Michael sends: /for/?p=<slug>.<token>
 // No sign-in. The token is the key; the server returns only what the client may see.
-import { store, isDemo, tokenFromParam } from "./portal/store.js";
+import { store, tokenFromParam } from "./portal/store.js";
 import { esc, paragraphs, fmtDate } from "./portal/ui.js";
 
 const main = document.getElementById("main");
@@ -92,7 +92,6 @@ function render() {
   document.title = `${p.title} | Sypher Solutions`;
   const letterParas = String(c.letter || "").trim().split(/\n{2,}/);
   main.innerHTML = `
-  ${isDemo ? `<p class="prop-demo"><strong>Demo mode</strong> A fictional sample, saved only in this browser.</p>` : ""}
   ${p.status === "draft" ? `<p class="prop-demo"><strong>Draft preview</strong> Only you can see this. The client sees it once it’s marked as sent.</p>` : ""}
   <section class="prop-cover">
     <img class="prop-cover__mark" src="../assets/img/sypher-mark-480.webp" alt="" width="375" height="388">

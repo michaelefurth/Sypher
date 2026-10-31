@@ -1,6 +1,6 @@
 // Shared UI helpers for the Client Portal. Every value that came from a user
 // or the database goes through esc() before it touches innerHTML.
-import { store, isDemo } from "./store.js";
+import { store } from "./store.js";
 import { ADMIN_CONTACT } from "./config.js";
 
 export function esc(value) {
@@ -93,15 +93,6 @@ export function renderChrome(session, { active = "", admin = false } = {}) {
       await store.signOut();
       location.href = "index.html";
     });
-  }
-  if (isDemo && !document.querySelector(".demo-banner")) {
-    const bar = document.createElement("div");
-    bar.className = "demo-banner";
-    bar.setAttribute("role", "region");
-    bar.setAttribute("aria-label", "Demo mode");
-    bar.innerHTML = `<strong>Demo mode</strong>Fictional sample data, saved only in this browser. <button type="button">Reset demo</button>`;
-    bar.querySelector("button").addEventListener("click", async () => { await store.resetDemo(); location.reload(); });
-    header?.after(bar);
   }
   const footer = document.getElementById("p-footer");
   if (footer) {

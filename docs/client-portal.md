@@ -33,7 +33,7 @@ Nothing written by the AI reaches a client until you publish it.
 | Path | What it is |
 | --- | --- |
 | `portal/*.html`, `assets/js/portal/`, `assets/css/portal.css` | The portal front end (static, served with the site) |
-| `assets/js/portal/config.js` | Supabase URL + anon key. **Empty = demo mode** with fictional data in the browser |
+| `assets/js/portal/config.js` | Supabase URL + anon key for the **Sypher Client Portal** project (`pswzqwmluigojvizvfdc`, us-west-1) |
 | `supabase/migrations/20261001000000_client_portal.sql` | Database schema, row level security, storage bucket |
 | `supabase/migrations/20261002000000_bespoke_flow.sql` | Inquiries, proposals, milestones, decision log, meeting fields |
 | `contact.html`, `assets/js/diagnostic.js` | The four-step diagnostic that replaces the contact form |
@@ -51,7 +51,9 @@ Nothing written by the AI reaches a client until you publish it.
 ## Going live (about 30–45 minutes)
 
 ### 1. Create the Supabase project
-1. Sign up at [supabase.com](https://supabase.com) and create a project (the free tier is enough to start). Choose a US region.
+The portal has its own project, **Sypher Client Portal** (ref `pswzqwmluigojvizvfdc`, us-west-1), in the Sypher organization. Keep it separate from the other "Sypher" project: the portal needs sign-ups turned off and defines its own `is_admin()`, which would break an app sharing the database.
+
+1. If you ever need to recreate it: create a project at [supabase.com](https://supabase.com) (the free tier is enough to start), in a US region.
 2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`.
 
 ### 2. Lock sign-in down to invited clients
@@ -96,7 +98,7 @@ supabase functions deploy proposal-response --no-verify-jwt
 ```
 
 ### 6. Connect the site
-In `assets/js/portal/config.js`, paste **Project URL** and the **anon / publishable key** (Project Settings → API). The anon key is designed to be public; the database rules protect the data. Commit and deploy the site. The demo banner disappears and sign-in switches to email links.
+`assets/js/portal/config.js` holds the **Project URL** and the **anon key** (Project Settings → API). It's already set for the Sypher Client Portal project; change it only if you move to a new project. The anon key is designed to be public; the database rules protect the data. Never put the service-role key there. Commit and deploy the site.
 
 ### 7. First engagement
 1. Sign in at `/portal/` → **Questionnaires → Import** → choose the client's question set from `private/` (a JSON file in the format below).
@@ -108,7 +110,7 @@ In `assets/js/portal/config.js`, paste **Project URL** and the **anon / publisha
 
 ## Diagnostic, proposals and client rooms
 
-**The diagnostic** (contact page). Four steps: the situation (up to three practices), two questions per practice, the shape of it (stage, team, timeline, budget), and contact details. Answers are kept in the visitor's tab until sent, so a refresh loses nothing. On submit, `submit-inquiry` stores it, emails the prospect a short confirmation, asks Claude for a pre-call brief (a summary, their most telling sentence, likely practices, questions to ask, fit concerns, a first step and a proposal outline) and emails you. A hidden field, a minimum fill time and a per-address limit keep bots out. Without Supabase configured, the page still works and offers to email the notes instead.
+**The diagnostic** (contact page). Four steps: the situation (up to three practices), two questions per practice, the shape of it (stage, team, timeline, budget), and contact details. Answers are kept in the visitor's tab until sent, so a refresh loses nothing. On submit, `submit-inquiry` stores it, emails the prospect a short confirmation, asks Claude for a pre-call brief (a summary, their most telling sentence, likely practices, questions to ask, fit concerns, a first step and a proposal outline) and emails you. A hidden field, a minimum fill time and a per-address limit keep bots out.
 
 **Inquiries** (admin). Read the brief and answers, reply with a pre-written email, keep private notes and a status, and **Start a proposal**: it's prefilled from the brief.
 
