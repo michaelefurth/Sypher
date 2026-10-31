@@ -174,7 +174,7 @@ function bind() {
         const row = await store.uploadFile(data.assignment.engagement_id, assignmentId, qId, file);
         data.files.push(row);
         cardEl.querySelector(".qcard__files").insertAdjacentHTML("beforeend", `<span>${esc(row.name)}</span>`);
-        stateEl.textContent = row.demo ? "Attached (demo: file not stored)" : "Attached";
+        stateEl.textContent = "Attached";
       } catch (err) { stateEl.textContent = ""; toast(`Upload failed: ${err.message}`, true); }
       e.target.value = "";
     }

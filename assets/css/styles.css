@@ -753,7 +753,6 @@ h1, h2, h3, h4, .lede, .prose blockquote { font-kerning: normal; font-variant-li
 .memo__title { font-size: clamp(2rem, 1.5rem + 1.5vw, 2.8rem); margin-bottom: 0.75rem; }
 .memo__title em { color: var(--teal); }
 .memo__lede { color: var(--slate); }
-.memo__demo { margin: 1.25rem 0 0; padding: 0.9rem 1.1rem; background: #F3E9D6; font-size: 0.9rem; color: var(--navy); }
 .memo__sheet { margin-top: 2rem; padding: clamp(1.25rem, 3vw, 2rem); background: var(--paper); border: 1px solid var(--rule); }
 .memo__meta { display: grid; gap: 0.6rem; margin: 0 0 1.5rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--champagne); }
 .memo__meta div { display: grid; grid-template-columns: 6.5rem 1fr; gap: 1rem; }
@@ -764,7 +763,7 @@ h1, h2, h3, h4, .lede, .prose blockquote { font-kerning: normal; font-variant-li
 .memo__q { font-family: var(--serif); font-size: 1.15rem; color: var(--text-strong); margin: 0 0 0.2rem; }
 .memo__a { margin: 0 0 1rem; white-space: pre-line; }
 .memo__actions { margin-top: 1.75rem; }
-@media print { .page-hero, .contact__aside, .memo__actions, .memo__demo { display: none !important; } .dx { border: 0; padding: 0; } .contact { display: block; } }
+@media print { .page-hero, .contact__aside, .memo__actions { display: none !important; } .dx { border: 0; padding: 0; } .contact { display: block; } }
 @media (max-width: 960px) { .contact { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .form { grid-template-columns: 1fr; } }
 

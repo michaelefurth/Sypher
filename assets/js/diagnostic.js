@@ -1,7 +1,7 @@
 // The contact page diagnostic: four short steps that become Michael's notes
 // for the first call. Answers are kept in this tab (sessionStorage) until sent,
 // so a refresh doesn't lose them.
-import { store, isDemo } from "./portal/store.js";
+import { store } from "./portal/store.js";
 
 const root = document.querySelector("[data-diagnostic]");
 
@@ -180,14 +180,10 @@ function memo(p) {
     if (!g) { g = { section: a.section, items: [] }; groups.push(g); }
     g.items.push(a);
   }
-  const mailBody = [`From: ${p.name}${p.role ? `, ${p.role}` : ""}${p.company ? `, ${p.company}` : ""}`, `Email: ${p.email}`, "",
-    ...p.answers.map((a) => `${a.question}\n${a.answer}\n`)].join("\n");
-  const mailto = `mailto:michael@sypher.solutions?subject=${encodeURIComponent(`First conversation: ${p.company || p.name}`)}&body=${encodeURIComponent(mailBody.slice(0, 1800))}`;
   return `<article class="memo" tabindex="-1">
     <p class="memo__kicker">Received · ${esc(date)}</p>
     <h2 class="memo__title">Thank you, <em>${esc(p.name.split(/\s+/)[0])}.</em></h2>
-    <p class="memo__lede">Here are your notes as Michael will read them before you speak. ${isDemo ? "" : "He’ll reply from michael@sypher.solutions to set a time."}</p>
-    ${isDemo ? `<p class="memo__demo"><strong>Preview mode.</strong> This site isn’t connected to its inbox yet, so these notes are saved only in this browser. To send them now, use “Email these notes”.</p>` : ""}
+    <p class="memo__lede">Here are your notes as Michael will read them before you speak. He’ll reply from michael@sypher.solutions to set a time.</p>
     <div class="memo__sheet">
       <dl class="memo__meta">
         <div><dt>For</dt><dd>Michael Furth</dd></div>
@@ -197,7 +193,6 @@ function memo(p) {
       ${groups.map((g) => `<section class="memo__group"><h3>${esc(g.section)}</h3>${g.items.map((a) => `<p class="memo__q">${esc(a.question)}</p><p class="memo__a">${esc(a.answer)}</p>`).join("")}</section>`).join("")}
     </div>
     <div class="btn-row memo__actions">
-      ${isDemo ? `<a class="btn btn--navy btn--sm" href="${mailto}">Email these notes</a>` : ""}
       <button type="button" class="btn btn--ghost btn--sm" data-print>Print or save a copy</button>
     </div>
   </article>`;
