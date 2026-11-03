@@ -33,9 +33,6 @@ jobs:
   functions:
     name: Edge functions type-check
     runs-on: ubuntu-latest
-    # Informational until the first green run: the functions have not yet been type-checked
-    # anywhere, so a failure here is reported without blocking the other checks.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2

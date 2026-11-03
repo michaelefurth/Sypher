@@ -41,7 +41,7 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/migrations/20261105000000_security_hardening.sql` | Two-step sign-in required for admin access, allowed file types, function privileges |
 | `supabase/config.toml` | Which functions need a signed-in caller, read by `supabase functions deploy` |
 | `scripts/check-csp.mjs` | Checks the site's Content Security Policy (in `.htaccess`) against every page |
-| `.github/workflows/checks.yml` | Runs the access tests, script checks, the policy check and the build check on every push |
+| `.github/workflows/checks.yml` | Runs the access tests, script checks, the policy check, the build check and a type-check of the functions on every push |
 | `contact.html`, `assets/js/diagnostic.js` | The four-step diagnostic that replaces the contact form |
 | `for/index.html`, `assets/js/proposal.js`, `assets/css/proposal.css` | The private proposal page clients read and sign |
 | `supabase/functions/submit-inquiry` | Public: stores a diagnostic, drafts your pre-call brief with Claude, emails you and the prospect |
