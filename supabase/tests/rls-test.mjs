@@ -186,5 +186,75 @@ await as(ADMIN, async () => {
   ok("acceptance logged to activity", (await q(`select * from public.activity where kind = 'proposal_accepted'`)).rows.length === 1);
 });
 
+// --- Client room: messages, deliverables, action items, agreement, timeline ---
+const ENG_B = "10000000-0000-0000-0000-000000000002";
+await db.exec(`
+  update public.proposals set engagement_id = '${ENG_A}' where token = 'tok-sent';
+  insert into public.deliverables (id, engagement_id, title, path, name) values
+   ('70000000-0000-0000-0000-000000000001', '${ENG_A}', 'Cash model', '${ENG_A}/deliverables/m.xlsx', 'm.xlsx'),
+   ('70000000-0000-0000-0000-000000000002', '${ENG_B}', 'B report', '${ENG_B}/deliverables/b.pdf', 'b.pdf');
+  insert into public.action_items (id, engagement_id, title) values
+   ('80000000-0000-0000-0000-000000000001', '${ENG_A}', 'Send bank statements'),
+   ('80000000-0000-0000-0000-000000000002', '${ENG_B}', 'B task');
+`);
+
+await as(ADMIN, async () => {
+  await q(`insert into public.messages (engagement_id, body) values ('${ENG_A}', 'Hello from Michael')`);
+  ok("admin can post a message", (await q(`select * from public.messages`)).rows.length === 1);
+});
+
+await as(A, async () => {
+  ok("client reads own thread", (await q(`select * from public.messages`)).rows.length === 1);
+  await q(`insert into public.messages (engagement_id, author_id, body) values ('${ENG_A}', '${A}', 'Hi Michael')`);
+  ok("client can post in own thread", (await q(`select * from public.messages`)).rows.length === 2);
+  ok("client cannot post as someone else", await fails(`insert into public.messages (engagement_id, author_id, body) values ('${ENG_A}', '${ADMIN}', 'spoof')`));
+  ok("client cannot post in another thread", await fails(`insert into public.messages (engagement_id, author_id, body) values ('${ENG_B}', '${A}', 'x')`));
+  ok("client cannot pre-mark a message read", await fails(`insert into public.messages (engagement_id, author_id, body, read_at) values ('${ENG_A}', '${A}', 'x', now())`));
+  ok("empty messages are rejected", await fails(`insert into public.messages (engagement_id, author_id, body) values ('${ENG_A}', '${A}', '   ')`));
+  ok("client cannot edit messages", (await q(`update public.messages set body = 'edited' returning id`)).rows.length === 0);
+  ok("client cannot delete messages", (await q(`delete from public.messages returning id`)).rows.length === 0);
+  const n = (await q(`select public.mark_messages_read('${ENG_A}') n`)).rows[0].n;
+  ok("client marks Michael's messages read, not their own", n === 1 && (await rows(`select count(*)::int c from public.messages where read_at is null`))[0].c === 1);
+  ok("client cannot mark another thread read", await fails(`select public.mark_messages_read('${ENG_B}')`));
+
+  ok("client sees own deliverables only", (await rows(`select title from public.deliverables`)).map((r) => r.title).join() === "Cash model");
+  ok("client cannot add a deliverable", await fails(`insert into public.deliverables (engagement_id, title, path, name) values ('${ENG_A}', 'x', '${ENG_A}/deliverables/x', 'x')`));
+
+  ok("client sees own action items only", (await rows(`select title from public.action_items`)).map((r) => r.title).join() === "Send bank statements");
+  ok("client cannot edit action items directly", (await q(`update public.action_items set title = 'x' returning id`)).rows.length === 0);
+  ok("client cannot add action items", await fails(`insert into public.action_items (engagement_id, title) values ('${ENG_A}', 'x')`));
+  await q(`select public.set_action_item_done('80000000-0000-0000-0000-000000000001', true)`);
+  const done = await rows(`select done_at, done_by from public.action_items`);
+  ok("client can tick their own action item", done[0].done_at !== null && done[0].done_by === A);
+  ok("client cannot tick another client's item", await fails(`select public.set_action_item_done('80000000-0000-0000-0000-000000000002', true)`));
+
+  const ag = (await q(`select public.engagement_agreement('${ENG_A}') a`)).rows[0].a;
+  ok("client reads their signed agreement", ag?.status === "accepted" && ag.signer_name === "Avery Morgan" && !("token" in ag));
+  ok("client cannot read another engagement's agreement", (await q(`select public.engagement_agreement('${ENG_B}') a`)).rows[0].a === null);
+
+  const kinds = (await rows(`select kind from public.activity where engagement_id = '${ENG_A}'`)).map((r) => r.kind);
+  ok("timeline records messages, deliverables, to-dos and decisions",
+    ["message_posted", "deliverable_shared", "action_assigned", "action_done", "decision_recorded"].every((k) => kinds.includes(k)), kinds.join(","));
+  ok("client cannot write to the timeline directly", await fails(`insert into public.activity (engagement_id, kind) values ('${ENG_A}', 'fake')`));
+});
+
+await as(B, async () => {
+  ok("other client cannot read A's messages", (await q(`select * from public.messages`)).rows.length === 0);
+  ok("other client cannot read A's deliverables", (await rows(`select title from public.deliverables`)).every((r) => r.title === "B report"));
+  ok("other client cannot read A's timeline", (await q(`select * from public.activity where engagement_id = '${ENG_A}'`)).rows.length === 0);
+});
+
+await asAnon(async () => {
+  ok("anon cannot read messages", await fails(`select * from public.messages`) || (await q(`select * from public.messages`)).rows.length === 0);
+  ok("anon cannot call room functions", await fails(`select public.engagement_agreement('${ENG_A}')`) && await fails(`select public.mark_messages_read('${ENG_A}')`));
+});
+
+await as(ADMIN, async () => {
+  await q(`update public.milestones set status = 'current' where engagement_id = '${ENG_A}'`);
+  ok("milestone progress reaches the timeline", (await q(`select * from public.activity where kind = 'milestone_current'`)).rows.length === 1);
+  const n = (await q(`select public.mark_messages_read('${ENG_A}') n`)).rows[0].n;
+  ok("admin marks the client's message read", n === 1);
+});
+
 console.log(results.join("\n"));
 console.log(results.some((r) => r.startsWith("FAIL")) ? "\nSOME TESTS FAILED" : `\nALL ${results.length} TESTS PASSED`);

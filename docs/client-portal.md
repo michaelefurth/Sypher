@@ -36,6 +36,7 @@ Nothing written by the AI reaches a client until you publish it.
 | `assets/js/portal/config.js` | Supabase URL + anon key for the **Sypher Client Portal** project (`pswzqwmluigojvizvfdc`, us-west-1) |
 | `supabase/migrations/20261001000000_client_portal.sql` | Database schema, row level security, storage bucket |
 | `supabase/migrations/20261002000000_bespoke_flow.sql` | Inquiries, proposals, milestones, decision log, meeting fields |
+| `supabase/migrations/20261103000000_client_room.sql` | Messages, deliverables, client to-dos, the signed agreement in the room, and the timeline |
 | `contact.html`, `assets/js/diagnostic.js` | The four-step diagnostic that replaces the contact form |
 | `for/index.html`, `assets/js/proposal.js`, `assets/css/proposal.css` | The private proposal page clients read and sign |
 | `supabase/functions/submit-inquiry` | Public: stores a diagnostic, drafts your pre-call brief with Claude, emails you and the prospect |
@@ -43,7 +44,8 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/invite-client` | Admin-only: invites a client by email and opens their engagement |
 | `supabase/functions/process-submission` | On submit: asks Claude for a draft update, emails you |
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
-| `supabase/tests/rls-test.mjs` | 59 automated security tests for the access rules |
+| `supabase/functions/room-notify` | Signed-in users: emails the other side about a new message, document or to-do |
+| `supabase/tests/rls-test.mjs` | 88 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
@@ -54,7 +56,7 @@ Nothing written by the AI reaches a client until you publish it.
 The portal has its own project, **Sypher Client Portal** (ref `pswzqwmluigojvizvfdc`, us-west-1), in the Sypher organization. Keep it separate from the other "Sypher" project: the portal needs sign-ups turned off and defines its own `is_admin()`, which would break an app sharing the database.
 
 1. If you ever need to recreate it: create a project at [supabase.com](https://supabase.com) (the free tier is enough to start), in a US region.
-2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`.
+2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`, then `20261103000000_client_room.sql`.
 
 ### 2. Lock sign-in down to invited clients
 1. **Authentication → Sign In / Providers → Email:** enabled. Turn **off** "Allow new users to sign up". Clients join only by your invitation.
@@ -91,6 +93,7 @@ supabase secrets set \
 supabase functions deploy invite-client
 supabase functions deploy process-submission
 supabase functions deploy publish-update
+supabase functions deploy room-notify
 
 # These two are called by people who aren't signed in (prospects and proposal readers).
 supabase functions deploy submit-inquiry --no-verify-jwt
@@ -110,7 +113,7 @@ supabase functions deploy proposal-response --no-verify-jwt
 
 ## Diagnostic, proposals and client rooms
 
-**The diagnostic** (contact page). Four steps: the situation (up to three practices), two questions per practice, the shape of it (stage, team, timeline, budget), and contact details. Answers are kept in the visitor's tab until sent, so a refresh loses nothing. On submit, `submit-inquiry` stores it, emails the prospect a short confirmation, asks Claude for a pre-call brief (a summary, their most telling sentence, likely practices, questions to ask, fit concerns, a first step and a proposal outline) and emails you. A hidden field, a minimum fill time and a per-address limit keep bots out.
+**The diagnostic** (contact page). A guided conversation, one question per screen: who they are (operating business, starting something, nonprofit, developing a product, something else), then up to three problems worded for that kind of organization (mapped to practices behind the scenes), a short tap-to-choose follow-up and an open question for each, the organization, timing and budget, what they've tried and what good looks like, and finally contact details. Tappable example answers help people start writing, and a "Notes for Michael" panel builds up beside the questions (a collapsible summary on phones). The wording lives in the `PROBLEMS` table at the top of `assets/js/diagnostic.js`. Answers are kept in the visitor's tab until sent, so a refresh loses nothing. On submit, `submit-inquiry` stores it, emails the prospect a short confirmation, asks Claude for a pre-call brief (a summary, their most telling sentence, likely practices, questions to ask, fit concerns, a first step and a proposal outline) and emails you. A hidden field, a minimum fill time and a per-address limit keep bots out.
 
 **Inquiries** (admin). Read the brief and answers, reply with a pre-written email, keep private notes and a status, and **Start a proposal**: it's prefilled from the brief.
 
@@ -120,7 +123,17 @@ supabase functions deploy proposal-response --no-verify-jwt
 
 **Opening the engagement.** On an accepted proposal, **Open the engagement** invites the signer to the portal, creates the engagement, copies the milestones from the proposal and sets the start date.
 
-**The client room** (the client's dashboard). The engagement on a cover, a milestone track, what they need to complete, your updates, a decision log with reasons, the next conversation (with an add-to-calendar file) and your contact card. You manage milestones, decisions and the next meeting from the engagement page in admin. To show a direct line or a response promise on the contact card, fill in `phone` and `response_promise` in `assets/js/portal/config.js`.
+**The client room** (the client's dashboard), in five tabs:
+
+- **Overview:** what needs them (to-dos they tick off, questionnaires), your latest update, the next conversation, where the plan stands, and the latest message.
+- **Plan:** the milestone track, with the documents each milestone produced, and the decision log.
+- **Documents:** the signed agreement (opens the accepted proposal read-only at `/for/?e=<engagement>`), deliverables from you filed by milestone, and files they've shared.
+- **Messages:** a private thread with you. Each side is emailed when the other writes, at most once every 10 minutes per thread, so a burst of short messages becomes one alert. Your alert includes the text; the client's says only that you've written, like update emails.
+- **Timeline:** everything that has happened, newest first. Messages, documents, to-dos, decisions and milestone changes are logged by the database automatically; AI drafts never appear.
+
+In admin, each engagement page has the thread with a reply box, **For the client to do** (add items, optionally emailing the client), and **Deliverables** (upload a file up to 50 MB, give it a title, note and milestone, optionally email the client). Unread client messages show on the Overview and next to **Clients & engagements**.
+
+You also manage milestones, decisions and the next meeting from the engagement page. To show a direct line or a response promise on the contact card, fill in `phone` and `response_promise` in `assets/js/portal/config.js`.
 
 ---
 

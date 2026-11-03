@@ -14,7 +14,14 @@ const ACTIVITY = {
   client_invited: "Client invited", assignment_created: "Questionnaire assigned", assignment_submitted: "Questionnaire submitted",
   draft_ready: "AI draft ready for review", update_published: "Update published",
   inquiry_received: "New diagnostic received", proposal_accepted: "Proposal accepted", proposal_declined: "Proposal declined",
+  message_posted: "Message", deliverable_shared: "Document shared", action_assigned: "Item added for the client",
+  action_done: "Client ticked off an item", decision_recorded: "Decision recorded", milestone_current: "Milestone under way", milestone_done: "Milestone complete",
 };
+const activityLabel = (a) => {
+  const base = a.kind === "message_posted" ? (a.detail?.from === "client" ? "Message from the client" : "You sent a message") : (ACTIVITY[a.kind] || a.kind);
+  return a.detail?.title && !["update_published", "proposal_accepted", "proposal_declined"].includes(a.kind) ? `${base}: ${a.detail.title}` : base;
+};
+const fmtSize = (n) => (!n ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 const MS_STATUS = [["upcoming", "Upcoming"], ["current", "In progress"], ["done", "Done"]];
 
 function shell(active, counts, body) {
@@ -25,7 +32,7 @@ function shell(active, counts, body) {
       ${link("overview", "Overview")}
       ${link("inquiries", "Inquiries", counts.inquiries)}
       ${link("proposals", "Proposals", counts.accepted)}
-      ${link("clients", "Clients & engagements")}
+      ${link("clients", "Clients & engagements", counts.unreadTotal)}
       ${link("drafts", "AI drafts", counts.review)}
       ${link("questionnaires", "Questionnaires")}
       <h4>Help</h4>
@@ -36,8 +43,9 @@ function shell(active, counts, body) {
 }
 
 async function counts() {
-  const [drafts, inquiries, proposals] = await Promise.all([store.drafts(), store.inquiries(), store.proposals()]);
+  const [drafts, inquiries, proposals, unread] = await Promise.all([store.drafts(), store.inquiries(), store.proposals(), store.unreadCounts(session.user.id)]);
   return {
+    unread, unreadTotal: Object.values(unread).reduce((a, b) => a + b, 0),
     review: drafts.filter((d) => d.status === "awaiting_review").length, drafts,
     inquiries: inquiries.filter((i) => i.status === "new").length, inquiryList: inquiries,
     accepted: proposals.filter((p) => p.status === "accepted" && !p.engagement_id).length, proposalList: proposals,
@@ -60,16 +68,19 @@ async function viewOverview(c) {
   const fresh = c.inquiryList.filter((i) => i.status === "new");
   const signed = c.proposalList.filter((p) => p.status === "accepted" && !p.engagement_id);
   const live = c.proposalList.filter((p) => ["sent", "viewed"].includes(p.status));
+  const unreadEngs = engagements.filter((e) => c.unread[e.id]);
   return title(`Good to see you, <em class="italic accent">Michael.</em>`, "What needs your attention across every engagement.") + `
     <div class="stat-row">
       <div class="stat"><b>${engagements.filter((e) => e.status === "active").length}</b><span>Active engagements</span></div>
       <div class="stat stat--gold"><b>${fresh.length}</b><span>New inquiries</span></div>
       <div class="stat"><b>${live.length}</b><span>Proposals out</span></div>
+      <div class="stat stat--gold"><b>${c.unreadTotal}</b><span>Unread messages</span></div>
       <div class="stat stat--gold"><b>${review.length}</b><span>Drafts to review</span></div>
     </div>
     <div class="p-grid">
       <section class="p-card p-card--accent"><p class="p-kicker">Needs your attention</p>
-        ${review.length || submitted.length || fresh.length || signed.length ? `<ul class="p-list">
+        ${review.length || submitted.length || fresh.length || signed.length || unreadEngs.length ? `<ul class="p-list">
+          ${unreadEngs.map((e) => `<li class="p-row"><div><h2 class="p-item">${c.unread[e.id]} new message${c.unread[e.id] > 1 ? "s" : ""}: ${esc(e.client.full_name || e.client.email)}</h2><p class="p-muted">${esc(e.title)}</p></div><a class="btn btn--navy btn--sm" href="#engagement=${esc(e.id)}">Reply</a></li>`).join("")}
           ${signed.map((p) => `<li class="p-row"><div><h2 class="p-item">Signed: ${esc(p.company || p.client_name || p.title)}</h2><p class="p-muted">${esc(p.title)} · ${esc(relTime(p.responded_at))}</p></div><a class="btn btn--navy btn--sm" href="#proposal=${esc(p.id)}">Open engagement</a></li>`).join("")}
           ${fresh.map((i) => `<li class="p-row"><div><h2 class="p-item">New diagnostic: ${esc(i.company || i.name)}</h2><p class="p-muted">${esc(i.practices.join(", "))} · ${esc(relTime(i.created_at))}</p></div><a class="btn btn--ghost btn--sm" href="#inquiry=${esc(i.id)}">Read the brief</a></li>`).join("")}
           ${review.map((d) => `<li class="p-row"><div><h2 class="p-item">Draft ready: ${esc(engTitle(d.engagement_id))}</h2><p class="p-muted">${esc(relTime(d.created_at))}</p></div><a class="btn btn--navy btn--sm" href="#draft=${esc(d.id)}">Review draft</a></li>`).join("")}
@@ -77,7 +88,7 @@ async function viewOverview(c) {
         </ul>` : `<p class="p-empty">You're all caught up.</p>`}
       </section>
       <section class="p-card"><p class="p-kicker">Recent activity</p>
-        ${activity.length ? `<ul class="p-list">${activity.slice(0, 12).map((a) => `<li><strong>${esc(ACTIVITY[a.kind] || a.kind)}</strong><p class="p-muted">${a.engagement_id ? `${esc(engTitle(a.engagement_id))} · ` : a.detail?.title ? `${esc(a.detail.title)} · ` : ""}${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+        ${activity.length ? `<ul class="p-list">${activity.slice(0, 12).map((a) => `<li><strong>${esc(activityLabel(a))}</strong><p class="p-muted">${a.engagement_id ? `${esc(engTitle(a.engagement_id))} · ` : a.detail?.title ? `${esc(a.detail.title)} · ` : ""}${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
       </section>
     </div>`;
 }
@@ -108,15 +119,54 @@ async function viewClients() {
 }
 
 async function viewEngagement(id) {
-  const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions] = await Promise.all([
+  const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions, messages, actions, deliverables] = await Promise.all([
     store.engagement(id), store.assignmentsFor(id), store.drafts(id), store.publications(id), store.questionnaires(), store.activity(id),
-    store.milestones(id), store.decisions(id),
+    store.milestones(id), store.decisions(id), store.messages(id), store.actionItems(id), store.deliverables(id),
   ]);
+  if (messages.some((m) => m.author_id !== session.user.id && !m.read_at)) store.markRead(id).catch(() => {});
+  const clientName = (eng.client?.full_name || "").split(" ")[0] || "Client";
+  const msName = new Map(milestones.map((m) => [m.id, m.title]));
   const localDT = (v) => { if (!v) return ""; const d = new Date(v); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
   const client = eng.client || {};
   return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + `
     <div class="draft-grid">
       <div class="p-stack">
+        <section class="p-card p-card--accent" id="messages"><div class="p-row"><p class="p-kicker">Messages</p><span class="p-muted">${messages.length ? `${messages.length} in the thread` : ""}</span></div>
+          ${messages.length ? `<ol class="thread admin-thread" id="thread">${messages.map((m) => {
+            const mine = m.author_id === session.user.id;
+            return `<li class="msg${mine ? " msg--mine" : ""}"><div class="msg__bubble"><p class="msg__who">${mine ? "You" : esc(clientName)}<time datetime="${esc(m.created_at)}">${esc(fmtDate(m.created_at, { month: "short", day: "numeric" }))} ${esc(new Date(m.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</time></p><div class="msg__body">${paragraphs(m.body)}</div>${mine ? `<p class="msg__who" style="margin:.4rem 0 0">${m.read_at ? "Read" : "Not read yet"}</p>` : ""}</div></li>`;
+          }).join("")}</ol>` : `<p class="p-muted">No messages yet. The client can write to you from their room; you're emailed when they do.</p>`}
+          <form class="p-form" id="msg-form"><label class="visually-hidden" for="msg-body">Reply to ${esc(clientName)}</label>
+            <textarea class="p-textarea" id="msg-body" name="body" rows="3" maxlength="8000" placeholder="Write to ${esc(clientName)}…" required></textarea>
+            <div class="p-row"><span class="p-muted">They're emailed a link to read it.</span><button class="btn btn--navy btn--sm" type="submit">Send</button></div>
+          </form>
+        </section>
+        <section class="p-card"><p class="p-kicker">For the client to do</p>
+          ${actions.length ? `<ul class="todo-list admin-todo">${actions.map((a) => `<li class="todo${a.done_at ? " is-done" : ""}">
+            <div class="todo__text"><span class="todo__title">${esc(a.title)}</span>${a.detail ? `<span class="todo__detail">${esc(a.detail)}</span>` : ""}</div>
+            <div class="btn-row" style="gap:.5rem 1rem;flex:none">${a.done_at ? `<span class="pill pill--teal pill--dot">Done ${esc(relTime(a.done_at))}</span>` : a.due_date ? `<span class="p-muted">Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}</span>` : ""}
+            <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">Small, concrete asks: send statements, book a site visit, confirm a number. The client ticks them off in their room.</p>`}
+          <form class="p-form p-form--2" id="action-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
+            <div class="p-field p-span"><label for="ac-title">What's needed</label><input class="p-input" id="ac-title" name="title" required placeholder="e.g. Send the last 12 months of bank statements"></div>
+            <div class="p-field"><label for="ac-detail">Detail (optional)</label><input class="p-input" id="ac-detail" name="detail"></div>
+            <div class="p-field"><label for="ac-due">Due</label><input class="p-input" id="ac-due" name="due_date" type="date"></div>
+            <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email the client</label><button class="btn btn--ghost btn--sm" type="submit">Add item</button></div>
+          </form>
+        </section>
+        <section class="p-card"><p class="p-kicker">Deliverables</p>
+          ${deliverables.length ? `<ul class="doc-list">${deliverables.map((d) => `<li class="doc">
+            <span class="doc__icon" aria-hidden="true">${esc((d.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
+            <div class="doc__body"><p class="doc__title">${esc(d.title)}</p>${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
+              <p class="doc__meta">${d.milestone_id && msName.has(d.milestone_id) ? `${esc(msName.get(d.milestone_id))} · ` : ""}${esc(fmtDate(d.created_at, { month: "short", day: "numeric" }))}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}</p></div>
+            <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(d.path)}">Open</button><button class="p-linkbtn" data-deliverable-delete="${esc(d.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">Reports, models and documents you share appear in the client's Documents tab, filed by milestone.</p>`}
+          <form class="p-form p-form--2" id="deliverable-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
+            <div class="p-field p-span"><label for="dl-file">File (up to 50 MB)</label><input class="p-input" id="dl-file" name="file" type="file" required></div>
+            <div class="p-field"><label for="dl-title">Title</label><input class="p-input" id="dl-title" name="title" placeholder="e.g. Cash-flow model, v2"></div>
+            <div class="p-field"><label for="dl-ms">Milestone</label><select class="p-select" id="dl-ms" name="milestone_id"><option value="">General</option>${milestones.map((m) => `<option value="${esc(m.id)}"${m.status === "current" ? " selected" : ""}>${esc(m.title)}</option>`).join("")}</select></div>
+            <div class="p-field p-span"><label for="dl-note">Note for the client (optional)</label><input class="p-input" id="dl-note" name="note" placeholder="What it is and what to look at first"></div>
+            <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email the client</label><button class="btn btn--navy btn--sm" type="submit">Share with client</button></div>
+          </form>
+        </section>
         <section class="p-card"><p class="p-kicker">Questionnaires</p>
           ${assignments.length ? `<div class="p-table-wrap" tabindex="0" role="region" aria-label="Table"><table class="p-table"><thead><tr><th>Questionnaire</th><th>Progress</th><th>Status</th><th>Actions</th></tr></thead><tbody>
           ${assignments.map((a) => `<tr><td><strong>${esc(a.questionnaire?.title)}</strong><br><span class="p-muted">${a.due_date ? `Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}` : "No due date"}</span></td>
@@ -189,7 +239,7 @@ async function viewEngagement(id) {
             <button class="btn btn--navy btn--sm" type="submit">Save</button>
           </form></section>
         <section class="p-card"><p class="p-kicker">Activity</p>
-          ${activity.length ? `<ul class="p-list">${activity.map((a) => `<li><strong>${esc(ACTIVITY[a.kind] || a.kind)}</strong><p class="p-muted">${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+          ${activity.length ? `<ul class="p-list">${activity.map((a) => `<li><strong>${esc(activityLabel(a))}</strong><p class="p-muted">${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
         </section>
       </div>
     </div>`;
@@ -351,6 +401,8 @@ async function route() {
     else { body = await viewOverview(c); active = "overview"; }
     main.innerHTML = shell(active, c, body);
     window.scrollTo(0, 0);
+    const thread = document.getElementById("thread");
+    if (thread) thread.scrollTop = thread.scrollHeight; // newest message in view
   } catch (err) {
     console.error(err);
     main.innerHTML = shell("", { review: 0, inquiries: 0, accepted: 0 }, `<p class="p-empty">${esc(err.message)}</p>`);
@@ -363,12 +415,39 @@ main.addEventListener("submit", async (e) => {
   const form = e.target;
   e.preventDefault();
   const btn = form.querySelector('button[type="submit"]');
+  const label = btn?.textContent;
   if (btn) btn.disabled = true;
   try {
     const hash = location.hash.slice(1);
     const engId = hash.startsWith("engagement=") ? hash.split("=")[1] : null;
     if (await pipelineSubmit(form, route)) return;
-    if (form.id === "room-form") {
+    if (form.id === "msg-form") {
+      const body = form.body.value.trim();
+      if (!body) return;
+      await store.postMessage(engId, body);
+      toast("Sent. The client has been emailed.");
+      await route();
+      document.getElementById("msg-body")?.focus();
+      const th = document.getElementById("thread"); if (th) th.scrollTop = th.scrollHeight;
+      return;
+    } else if (form.id === "action-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const existing = await store.actionItems(engId);
+      const row = await store.addActionItem({ engagement_id: engId, title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, position: existing.length + 1 });
+      if (form.notify.checked) store.notify("action_item", row.id);
+      toast(form.notify.checked ? "Added. The client has been emailed." : "Added to the client's list.");
+      route();
+    } else if (form.id === "deliverable-form") {
+      const file = form.file.files[0];
+      if (!file) throw new Error("Choose a file to share.");
+      if (file.size > 50 * 1024 * 1024) throw new Error("Files must be under 50 MB.");
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      if (btn) btn.textContent = "Uploading…";
+      const row = await store.uploadDeliverable(engId, { title: v("title") || file.name.replace(/\.[^.]+$/, ""), note: v("note") || null, milestone_id: v("milestone_id") || null }, file);
+      if (form.notify.checked) store.notify("deliverable", row.id);
+      toast(form.notify.checked ? "Shared. The client has been emailed." : "Shared in the client's Documents.");
+      route();
+    } else if (form.id === "room-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const link = v("meeting_link");
       if (link && !/^https:\/\//.test(link)) throw new Error("The video link should start with https://");
@@ -414,7 +493,7 @@ main.addEventListener("submit", async (e) => {
       route();
     }
   } catch (err) { toast(err.message, true); }
-  finally { if (btn) btn.disabled = false; }
+  finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
 });
 
 main.addEventListener("click", async (e) => {
@@ -423,6 +502,18 @@ main.addEventListener("click", async (e) => {
   try {
     if (await pipelineClick(t, route)) return;
     if (t.dataset.msDelete) { await store.deleteMilestone(t.dataset.msDelete); route(); }
+    else if (t.dataset.actionDelete) {
+      if (await confirmDialog({ title: "Remove this item?", body: "<p>It disappears from the client's list.</p>", confirmLabel: "Remove" })) { await store.deleteActionItem(t.dataset.actionDelete); route(); }
+    }
+    else if (t.dataset.deliverableDelete) {
+      const d = (await store.deliverables(location.hash.split("=")[1])).find((x) => x.id === t.dataset.deliverableDelete);
+      if (d && await confirmDialog({ title: "Remove this document?", body: `<p><strong>${esc(d.title)}</strong> is deleted and disappears from the client's Documents.</p>`, confirmLabel: "Remove" })) { await store.deleteDeliverable(d); toast("Removed."); route(); }
+    }
+    else if (t.dataset.openFile) {
+      const win = window.open("", "_blank");
+      try { const url = await store.fileUrl(t.dataset.openFile); if (win) win.location.href = url; else location.href = url; }
+      catch (err) { if (win) win.close(); throw err; }
+    }
     else if (t.dataset.decDelete) {
       if (await confirmDialog({ title: "Remove this decision?", body: "<p>It disappears from the client's room.</p>", confirmLabel: "Remove" })) { await store.deleteDecision(t.dataset.decDelete); route(); }
     }

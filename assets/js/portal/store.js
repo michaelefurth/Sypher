@@ -337,11 +337,87 @@ export const store = {
     check(await client.from("decisions").delete().eq("id", id));
   },
 
-  async activity(engagementId) {
+  async activity(engagementId, limit = 40) {
     const client = await sb();
-    let q = client.from("activity").select("*").order("created_at", { ascending: false }).limit(40);
+    let q = client.from("activity").select("*").order("created_at", { ascending: false }).limit(limit);
     if (engagementId) q = q.eq("engagement_id", engagementId);
     return check(await q);
+  },
+
+  // ---- messages ----
+  async messages(engagementId) {
+    const client = await sb();
+    return check(await client.from("messages").select("*").eq("engagement_id", engagementId).order("created_at"));
+  },
+  async postMessage(engagementId, body) {
+    const client = await sb();
+    const row = check(await client.from("messages").insert({ engagement_id: engagementId, body }).select().single());
+    this.notify("message", row.id);
+    return row;
+  },
+  async markRead(engagementId) {
+    const client = await sb();
+    return check(await client.rpc("mark_messages_read", { eng: engagementId }));
+  },
+  /** Unread messages written by the other side, as { engagementId: count }. */
+  async unreadCounts(userId) {
+    const client = await sb();
+    const rows = check(await client.from("messages").select("engagement_id, author_id").is("read_at", null));
+    const out = {};
+    for (const r of rows) if (r.author_id !== userId) out[r.engagement_id] = (out[r.engagement_id] || 0) + 1;
+    return out;
+  },
+
+  // ---- deliverables ----
+  async deliverables(engagementId) {
+    const client = await sb();
+    return check(await client.from("deliverables").select("*").eq("engagement_id", engagementId).order("created_at", { ascending: false }));
+  },
+  async uploadDeliverable(engagementId, fields, file) {
+    const client = await sb();
+    const safe = file.name.replace(/[^\w.\-]+/g, "_").slice(-120);
+    const path = `${engagementId}/deliverables/${crypto.randomUUID()}-${safe}`;
+    check(await client.storage.from("portal").upload(path, file, { upsert: false }));
+    try {
+      return check(await client.from("deliverables").insert({ engagement_id: engagementId, path, name: file.name, size: file.size, ...fields }).select().single());
+    } catch (err) {
+      await client.storage.from("portal").remove([path]);
+      throw err;
+    }
+  },
+  async deleteDeliverable(d) {
+    const client = await sb();
+    check(await client.from("deliverables").delete().eq("id", d.id));
+    await client.storage.from("portal").remove([d.path]);
+  },
+
+  // ---- action items ----
+  async actionItems(engagementId) {
+    const client = await sb();
+    return check(await client.from("action_items").select("*").eq("engagement_id", engagementId).order("position").order("created_at"));
+  },
+  async addActionItem(row) {
+    const client = await sb();
+    return check(await client.from("action_items").insert(row).select().single());
+  },
+  async deleteActionItem(id) {
+    const client = await sb();
+    check(await client.from("action_items").delete().eq("id", id));
+  },
+  async setActionDone(id, done) {
+    const client = await sb();
+    check(await client.rpc("set_action_item_done", { item: id, done }));
+  },
+
+  // ---- the signed agreement behind an engagement ----
+  async agreement(engagementId) {
+    const client = await sb();
+    return check(await client.rpc("engagement_agreement", { eng: engagementId }));
+  },
+
+  /** Email the other side about something new. Best effort: never blocks the action itself. */
+  async notify(kind, id) {
+    try { await invoke("room-notify", { kind, id }); } catch (err) { console.warn("Notification not sent:", err.message); }
   },
 };
 
