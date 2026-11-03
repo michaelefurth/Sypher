@@ -1,0 +1,27 @@
+# Supabase CLI settings for the Sypher Client Portal (project pswzqwmluigojvizvfdc).
+# `supabase functions deploy` reads these, so each function keeps the right sign-in rule.
+project_id = "pswzqwmluigojvizvfdc"
+
+# Signed-in callers only (the default). Each function also checks who the caller is;
+# admin requests need a two-step session (see supabase/functions/_shared/supabase.ts).
+[functions.invite-client]
+verify_jwt = true
+
+[functions.invite-member]
+verify_jwt = true
+
+[functions.process-submission]
+verify_jwt = true
+
+[functions.publish-update]
+verify_jwt = true
+
+[functions.room-notify]
+verify_jwt = true
+
+# Called by people who aren't signed in: the contact-page diagnostic and the proposal page.
+[functions.submit-inquiry]
+verify_jwt = false
+
+[functions.proposal-response]
+verify_jwt = false

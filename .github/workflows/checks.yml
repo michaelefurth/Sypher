@@ -1,0 +1,48 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  site-and-database:
+    name: Access rules, scripts and security headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Database access rules (every migration, in PGlite)
+        working-directory: supabase/tests
+        run: |
+          npm install --no-save --no-audit --no-fund @electric-sql/pglite
+          node rls-test.mjs
+      - name: Scripts parse
+        run: for f in assets/js/*.js assets/js/portal/*.js scripts/*.mjs; do node --check "$f"; done
+      - name: Content Security Policy matches the pages
+        run: node scripts/check-csp.mjs
+      - name: Pages are built (partials and asset versions up to date)
+        run: |
+          node scripts/build.mjs > /dev/null
+          git diff --exit-code -- '*.html' || (echo "Run node scripts/build.mjs and commit the result." && exit 1)
+
+  functions:
+    name: Edge functions type-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: deno check
+        run: |
+          for dir in supabase/functions/*/; do
+            name=$(basename "$dir")
+            [ "$name" = "_shared" ] && continue
+            echo "== $name"
+            deno check --config "$dir/deno.json" "$dir/index.ts"
+          done

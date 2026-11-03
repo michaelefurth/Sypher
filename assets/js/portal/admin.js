@@ -1,7 +1,7 @@
 // Admin console for the Managing Principal.
 // Routes (hash): #overview · #inquiries · #inquiry=<id> · #proposals · #proposal=<id>
 //                #clients · #engagement=<id> · #responses=<assignmentId> · #draft=<id> · #questionnaires
-import { store, isDemo, progressOf } from "./store.js";
+import { store, progressOf, FILE_ACCEPT, checkFile } from "./store.js";
 import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, statusPill, progressBar, download } from "./ui.js";
 import { viewInquiries, viewInquiry, viewProposals, viewProposal, pipelineSubmit, pipelineClick } from "./admin-pipeline.js";
 
@@ -14,7 +14,18 @@ const ACTIVITY = {
   client_invited: "Client invited", assignment_created: "Questionnaire assigned", assignment_submitted: "Questionnaire submitted",
   draft_ready: "AI draft ready for review", update_published: "Update published",
   inquiry_received: "New diagnostic received", proposal_accepted: "Proposal accepted", proposal_declined: "Proposal declined",
+  message_posted: "Message", deliverable_shared: "Document shared", action_assigned: "Item added for the client",
+  action_done: "Task done", decision_recorded: "Decision recorded", milestone_current: "Milestone under way", milestone_done: "Milestone complete",
+  team_file_shared: "Team file added", member_invited: "Joined the team", member_revoked: "Team access removed",
 };
+const activityLabel = (a) => {
+  const base = a.kind === "message_posted"
+    ? (a.detail?.thread === "team" ? (a.detail?.from === "principal" ? "You wrote to the team" : a.detail?.from === "client" ? "Client wrote to the team" : "Team member wrote to the team")
+      : a.detail?.from === "client" ? "Message from the client" : "You sent a message")
+    : (ACTIVITY[a.kind] || a.kind);
+  return a.detail?.title && !["update_published", "proposal_accepted", "proposal_declined"].includes(a.kind) ? `${base}: ${a.detail.title}` : base;
+};
+const fmtSize = (n) => (!n ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 const MS_STATUS = [["upcoming", "Upcoming"], ["current", "In progress"], ["done", "Done"]];
 
 function shell(active, counts, body) {
@@ -25,7 +36,7 @@ function shell(active, counts, body) {
       ${link("overview", "Overview")}
       ${link("inquiries", "Inquiries", counts.inquiries)}
       ${link("proposals", "Proposals", counts.accepted)}
-      ${link("clients", "Clients & engagements")}
+      ${link("clients", "Clients & engagements", counts.unreadTotal)}
       ${link("drafts", "AI drafts", counts.review)}
       ${link("questionnaires", "Questionnaires")}
       <h4>Help</h4>
@@ -36,8 +47,9 @@ function shell(active, counts, body) {
 }
 
 async function counts() {
-  const [drafts, inquiries, proposals] = await Promise.all([store.drafts(), store.inquiries(), store.proposals()]);
+  const [drafts, inquiries, proposals, unread] = await Promise.all([store.drafts(), store.inquiries(), store.proposals(), store.unreadCounts(session.user.id)]);
   return {
+    unread, unreadTotal: Object.values(unread).reduce((a, b) => a + b, 0),
     review: drafts.filter((d) => d.status === "awaiting_review").length, drafts,
     inquiries: inquiries.filter((i) => i.status === "new").length, inquiryList: inquiries,
     accepted: proposals.filter((p) => p.status === "accepted" && !p.engagement_id).length, proposalList: proposals,
@@ -60,16 +72,19 @@ async function viewOverview(c) {
   const fresh = c.inquiryList.filter((i) => i.status === "new");
   const signed = c.proposalList.filter((p) => p.status === "accepted" && !p.engagement_id);
   const live = c.proposalList.filter((p) => ["sent", "viewed"].includes(p.status));
+  const unreadEngs = engagements.filter((e) => c.unread[e.id]);
   return title(`Good to see you, <em class="italic accent">Michael.</em>`, "What needs your attention across every engagement.") + `
     <div class="stat-row">
       <div class="stat"><b>${engagements.filter((e) => e.status === "active").length}</b><span>Active engagements</span></div>
       <div class="stat stat--gold"><b>${fresh.length}</b><span>New inquiries</span></div>
       <div class="stat"><b>${live.length}</b><span>Proposals out</span></div>
+      <div class="stat stat--gold"><b>${c.unreadTotal}</b><span>Unread messages</span></div>
       <div class="stat stat--gold"><b>${review.length}</b><span>Drafts to review</span></div>
     </div>
     <div class="p-grid">
       <section class="p-card p-card--accent"><p class="p-kicker">Needs your attention</p>
-        ${review.length || submitted.length || fresh.length || signed.length ? `<ul class="p-list">
+        ${review.length || submitted.length || fresh.length || signed.length || unreadEngs.length ? `<ul class="p-list">
+          ${unreadEngs.map((e) => `<li class="p-row"><div><h2 class="p-item">${c.unread[e.id]} new message${c.unread[e.id] > 1 ? "s" : ""}: ${esc(e.client.full_name || e.client.email)}</h2><p class="p-muted">${esc(e.title)}</p></div><a class="btn btn--navy btn--sm" href="#engagement=${esc(e.id)}">Reply</a></li>`).join("")}
           ${signed.map((p) => `<li class="p-row"><div><h2 class="p-item">Signed: ${esc(p.company || p.client_name || p.title)}</h2><p class="p-muted">${esc(p.title)} · ${esc(relTime(p.responded_at))}</p></div><a class="btn btn--navy btn--sm" href="#proposal=${esc(p.id)}">Open engagement</a></li>`).join("")}
           ${fresh.map((i) => `<li class="p-row"><div><h2 class="p-item">New diagnostic: ${esc(i.company || i.name)}</h2><p class="p-muted">${esc(i.practices.join(", "))} · ${esc(relTime(i.created_at))}</p></div><a class="btn btn--ghost btn--sm" href="#inquiry=${esc(i.id)}">Read the brief</a></li>`).join("")}
           ${review.map((d) => `<li class="p-row"><div><h2 class="p-item">Draft ready: ${esc(engTitle(d.engagement_id))}</h2><p class="p-muted">${esc(relTime(d.created_at))}</p></div><a class="btn btn--navy btn--sm" href="#draft=${esc(d.id)}">Review draft</a></li>`).join("")}
@@ -77,7 +92,7 @@ async function viewOverview(c) {
         </ul>` : `<p class="p-empty">You're all caught up.</p>`}
       </section>
       <section class="p-card"><p class="p-kicker">Recent activity</p>
-        ${activity.length ? `<ul class="p-list">${activity.slice(0, 12).map((a) => `<li><strong>${esc(ACTIVITY[a.kind] || a.kind)}</strong><p class="p-muted">${a.engagement_id ? `${esc(engTitle(a.engagement_id))} · ` : a.detail?.title ? `${esc(a.detail.title)} · ` : ""}${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+        ${activity.length ? `<ul class="p-list">${activity.slice(0, 12).map((a) => `<li><strong>${esc(activityLabel(a))}</strong><p class="p-muted">${a.engagement_id ? `${esc(engTitle(a.engagement_id))} · ` : a.detail?.title ? `${esc(a.detail.title)} · ` : ""}${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
       </section>
     </div>`;
 }
@@ -102,21 +117,100 @@ async function viewClients() {
           <div class="p-field"><label for="i-title">Engagement title</label><input class="p-input" id="i-title" name="engagement_title" required placeholder="e.g. Business Feasibility Study"></div>
           <div class="p-field"><label for="i-summary">Summary the client will see</label><textarea class="p-textarea" id="i-summary" name="engagement_summary" rows="3"></textarea></div>
           <button class="btn btn--navy btn--sm" type="submit">Send invitation</button>
-          <p class="p-muted">${isDemo ? "Demo mode: no email is sent." : "They'll receive a secure link to set up their access."}</p>
+          <p class="p-muted">They'll receive a secure link to set up their access.</p>
         </form></section>
     </div>`;
 }
 
 async function viewEngagement(id) {
-  const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions] = await Promise.all([
+  const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions, messages, actions, deliverables, roster, teamMessages, teamFiles] = await Promise.all([
     store.engagement(id), store.assignmentsFor(id), store.drafts(id), store.publications(id), store.questionnaires(), store.activity(id),
-    store.milestones(id), store.decisions(id),
+    store.milestones(id), store.decisions(id), store.messages(id), store.actionItems(id), store.deliverables(id),
+    store.roster(id).catch(() => null), store.messages(id, "team"), store.teamFiles(id).catch(() => []),
   ]);
+  window.__team = { roster, teamFiles };
+  const members = roster?.members || [];
+  const activeMembers = members.filter((m) => m.status === "active");
+  const who = (uid) => uid === session.user.id ? "You" : uid === eng.client_id ? (eng.client?.full_name || "Client") : (members.find((m) => m.user_id === uid)?.name || "Former member");
+  const whoRole = (uid) => { const m = members.find((x) => x.user_id === uid); return m ? [m.role_label, m.organization].filter(Boolean).join(", ") : ""; };
+  const assignee = (a) => (a.assignee_id ? who(a.assignee_id) : (eng.client?.full_name || "Client"));
+  const accessText = (m) => m.status === "revoked" ? "Access removed" : m.status === "expired" ? `Ended ${fmtDate(m.expires_at, { month: "short", day: "numeric" })}` : m.expires_at ? `Until ${fmtDate(m.expires_at, { month: "short", day: "numeric", year: "numeric" })}` : "Until the engagement ends";
+  if (messages.some((m) => m.author_id !== session.user.id && !m.read_at)) store.markRead(id).catch(() => {});
+  const clientName = (eng.client?.full_name || "").split(" ")[0] || "Client";
+  const msName = new Map(milestones.map((m) => [m.id, m.title]));
   const localDT = (v) => { if (!v) return ""; const d = new Date(v); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
   const client = eng.client || {};
   return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + `
     <div class="draft-grid">
       <div class="p-stack">
+        <section class="p-card p-card--accent" id="messages"><div class="p-row"><p class="p-kicker">Private messages</p><span class="p-muted">${messages.length ? `${messages.length} in the thread` : ""}</span></div>
+          ${messages.length ? `<ol class="thread admin-thread" id="thread">${messages.map((m) => {
+            const mine = m.author_id === session.user.id;
+            return `<li class="msg${mine ? " msg--mine" : ""}"><div class="msg__bubble"><p class="msg__who">${mine ? "You" : esc(clientName)}<time datetime="${esc(m.created_at)}">${esc(fmtDate(m.created_at, { month: "short", day: "numeric" }))} ${esc(new Date(m.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</time></p><div class="msg__body">${paragraphs(m.body)}</div>${mine ? `<p class="msg__who" style="margin:.4rem 0 0">${m.read_at ? "Read" : "Not read yet"}</p>` : ""}</div></li>`;
+          }).join("")}</ol>` : `<p class="p-muted">No messages yet. The client can write to you from their room; you're emailed when they do.</p>`}
+          <form class="p-form" id="msg-form"><label class="visually-hidden" for="msg-body">Reply to ${esc(clientName)}</label>
+            <textarea class="p-textarea" id="msg-body" name="body" rows="3" maxlength="8000" placeholder="Write to ${esc(clientName)}…" required></textarea>
+            <div class="p-row"><span class="p-muted">They're emailed a link to read it.</span><button class="btn btn--navy btn--sm" type="submit">Send</button></div>
+          </form>
+        </section>
+        <section class="p-card" id="team"><div class="p-row"><p class="p-kicker">Team</p><span class="p-muted">${activeMembers.length ? `${activeMembers.length} outside adviser${activeMembers.length > 1 ? "s" : ""}` : ""}</span></div>
+          ${members.length ? `<ul class="people">${members.map((m) => `<li class="person${m.status !== "active" ? " is-off" : ""}">
+            <span class="msg__avatar msg__avatar--initials" aria-hidden="true">${esc((m.name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase())}</span>
+            <div class="person__body"><p class="person__name">${esc(m.name)}</p><p class="person__role">${esc([m.role_label, m.organization, m.email].filter(Boolean).join(" · "))}</p>
+              <p class="person__access">${esc(accessText(m))} · ${[m.can_message && "messages", m.can_files && "files", "tasks"].filter(Boolean).join(", ")}${m.last_seen_at ? ` · last in ${esc(relTime(m.last_seen_at))}` : m.status === "active" ? " · not signed in yet" : ""}</p></div>
+            <div class="btn-row" style="gap:.4rem 1rem;flex-direction:column;align-items:flex-end">
+              ${m.status === "active" ? `<button class="p-linkbtn" data-member-extend="${esc(m.id)}">+30 days</button><button class="p-linkbtn p-linkbtn--danger" data-member-revoke="${esc(m.id)}">Remove</button>` : `<button class="p-linkbtn" data-member-restore="${esc(m.id)}">Restore 30 days</button>`}
+            </div></li>`).join("")}</ul>` : `<p class="p-muted">Nobody outside yet. The client can add their attorney, CPA or lender from their room, or you can add them here. Members see only the team thread, team files and their tasks.</p>`}
+          <details class="room-add"><summary class="p-linkbtn">Add someone</summary>
+            <form class="p-form p-form--2" id="member-form">
+              <div class="p-field"><label for="mb-name">Name</label><input class="p-input" id="mb-name" name="full_name" required></div>
+              <div class="p-field"><label for="mb-email">Email</label><input class="p-input" id="mb-email" name="email" type="email" required></div>
+              <div class="p-field"><label for="mb-role">Role</label><input class="p-input" id="mb-role" name="role_label" placeholder="Attorney, CPA, Lender…"></div>
+              <div class="p-field"><label for="mb-org">Firm</label><input class="p-input" id="mb-org" name="organization"></div>
+              <div class="p-field"><label for="mb-len">Access</label><select class="p-select" id="mb-len" name="length"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="">Until the engagement ends</option></select></div>
+              <div class="p-field room-add__perms" style="align-self:end"><label class="p-check"><input type="checkbox" name="can_message" checked> Messages</label><label class="p-check"><input type="checkbox" name="can_files" checked> Files</label></div>
+              <div class="p-span"><button class="btn btn--navy btn--sm" type="submit">Send invitation</button></div>
+            </form></details>
+          <h3 class="room-sub" style="margin-top:1.75rem">Team thread</h3>
+          ${teamMessages.length ? `<ol class="thread admin-thread" id="team-thread">${teamMessages.map((m) => {
+            const mine = m.author_id === session.user.id;
+            return `<li class="msg${mine ? " msg--mine" : ""}"><div class="msg__bubble"><p class="msg__who">${esc(who(m.author_id))}${!mine && whoRole(m.author_id) ? `<span class="msg__role">${esc(whoRole(m.author_id))}</span>` : ""}<time datetime="${esc(m.created_at)}">${esc(fmtDate(m.created_at, { month: "short", day: "numeric" }))} ${esc(new Date(m.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</time></p><div class="msg__body">${paragraphs(m.body)}</div></div></li>`;
+          }).join("")}</ol>` : `<p class="p-muted">${members.length ? "No team messages yet." : "Appears once someone is on the team."}</p>`}
+          ${members.length ? `<form class="p-form" id="team-msg-form"><label class="visually-hidden" for="team-msg-body">Write to the team</label>
+            <textarea class="p-textarea" id="team-msg-body" name="body" rows="2" maxlength="8000" placeholder="Write to the whole team…" required></textarea>
+            <div class="p-row"><span class="p-muted">Everyone on the team who can message is emailed a link.</span><button class="btn btn--ghost btn--sm" type="submit">Send to team</button></div></form>` : ""}
+          ${teamFiles.length ? `<h3 class="room-sub" style="margin-top:1.75rem">Team files</h3><ul class="doc-list">${teamFiles.map((f) => `<li class="doc">
+            <span class="doc__icon doc__icon--mine" aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
+            <div class="doc__body"><p class="doc__title">${esc(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}<p class="doc__meta">${esc(who(f.uploaded_by))} · ${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
+            <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(f.path)}">Open</button><button class="p-linkbtn" data-team-file-delete="${esc(f.id)}">Remove</button></div></li>`).join("")}</ul>` : ""}
+        </section>
+        <section class="p-card"><p class="p-kicker">Tasks</p>
+          ${actions.length ? `<ul class="todo-list admin-todo">${actions.map((a) => `<li class="todo${a.done_at ? " is-done" : ""}">
+            <div class="todo__text"><span class="todo__title">${esc(a.title)}</span><span class="todo__detail">${esc(assignee(a))}${a.detail ? ` · ${esc(a.detail)}` : ""}</span></div>
+            <div class="btn-row" style="gap:.5rem 1rem;flex:none">${a.done_at ? `<span class="pill pill--teal pill--dot">Done ${esc(relTime(a.done_at))}</span>` : a.due_date ? `<span class="p-muted">Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}</span>` : ""}
+            <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">Small, concrete asks: send statements, book a site visit, confirm a number. Give them to the client or anyone on the team; they tick them off in the portal.</p>`}
+          <form class="p-form p-form--2" id="action-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
+            <div class="p-field p-span"><label for="ac-title">What's needed</label><input class="p-input" id="ac-title" name="title" required placeholder="e.g. Send the last 12 months of bank statements"></div>
+            <div class="p-field"><label for="ac-detail">Detail (optional)</label><input class="p-input" id="ac-detail" name="detail"></div>
+            <div class="p-field"><label for="ac-due">Due</label><input class="p-input" id="ac-due" name="due_date" type="date"></div>
+            <div class="p-field p-span"><label for="ac-who">For</label><select class="p-select" id="ac-who" name="assignee_id"><option value="">${esc(eng.client?.full_name || "The client")} (client)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
+            <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email them</label><button class="btn btn--ghost btn--sm" type="submit">Add task</button></div>
+          </form>
+        </section>
+        <section class="p-card"><p class="p-kicker">Deliverables</p>
+          ${deliverables.length ? `<ul class="doc-list">${deliverables.map((d) => `<li class="doc">
+            <span class="doc__icon" aria-hidden="true">${esc((d.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
+            <div class="doc__body"><p class="doc__title">${esc(d.title)}${d.shared_with_team ? ` <span class="pill pill--teal">Team can see</span>` : ""}</p>${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
+              <p class="doc__meta">${d.milestone_id && msName.has(d.milestone_id) ? `${esc(msName.get(d.milestone_id))} · ` : ""}${esc(fmtDate(d.created_at, { month: "short", day: "numeric" }))}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}</p></div>
+            <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(d.path)}">Open</button>${members.length ? `<button class="p-linkbtn" data-deliverable-share="${esc(d.id)}" data-share="${d.shared_with_team ? "0" : "1"}">${d.shared_with_team ? "Unshare" : "Share with team"}</button>` : ""}<button class="p-linkbtn" data-deliverable-delete="${esc(d.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">Reports, models and documents you share appear in the client's Documents tab, filed by milestone.</p>`}
+          <form class="p-form p-form--2" id="deliverable-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
+            <div class="p-field p-span"><label for="dl-file">File (PDF, Office, CSV, text or image; up to 50 MB)</label><input class="p-input" id="dl-file" name="file" type="file" accept="${FILE_ACCEPT}" required></div>
+            <div class="p-field"><label for="dl-title">Title</label><input class="p-input" id="dl-title" name="title" placeholder="e.g. Cash-flow model, v2"></div>
+            <div class="p-field"><label for="dl-ms">Milestone</label><select class="p-select" id="dl-ms" name="milestone_id"><option value="">General</option>${milestones.map((m) => `<option value="${esc(m.id)}"${m.status === "current" ? " selected" : ""}>${esc(m.title)}</option>`).join("")}</select></div>
+            <div class="p-field p-span"><label for="dl-note">Note for the client (optional)</label><input class="p-input" id="dl-note" name="note" placeholder="What it is and what to look at first"></div>
+            <div class="p-span p-row"><span class="room-add__perms"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email the client</label>${members.length ? `<label class="p-check p-check--inline"><input type="checkbox" name="team"> Team can see it too</label>` : ""}</span><button class="btn btn--navy btn--sm" type="submit">Share with client</button></div>
+          </form>
+        </section>
         <section class="p-card"><p class="p-kicker">Questionnaires</p>
           ${assignments.length ? `<div class="p-table-wrap" tabindex="0" role="region" aria-label="Table"><table class="p-table"><thead><tr><th>Questionnaire</th><th>Progress</th><th>Status</th><th>Actions</th></tr></thead><tbody>
           ${assignments.map((a) => `<tr><td><strong>${esc(a.questionnaire?.title)}</strong><br><span class="p-muted">${a.due_date ? `Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}` : "No due date"}</span></td>
@@ -189,7 +283,15 @@ async function viewEngagement(id) {
             <button class="btn btn--navy btn--sm" type="submit">Save</button>
           </form></section>
         <section class="p-card"><p class="p-kicker">Activity</p>
-          ${activity.length ? `<ul class="p-list">${activity.map((a) => `<li><strong>${esc(ACTIVITY[a.kind] || a.kind)}</strong><p class="p-muted">${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+          ${activity.length ? `<ul class="p-list">${activity.map((a) => `<li><strong>${esc(activityLabel(a))}</strong><p class="p-muted">${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+        </section>
+        <section class="p-card closeout"><p class="p-kicker">Close out</p>
+          <p class="p-muted">When the work is done, mark it complete: the client keeps read access and outside team members lose theirs. To remove the client's data entirely, export it first, then delete.</p>
+          <div class="btn-row" style="gap:.75rem 1.25rem;margin-top:1rem">
+            ${eng.status === "active" ? `<button class="btn btn--ghost btn--sm" data-eng-status="complete">Mark complete</button>` : `<button class="btn btn--ghost btn--sm" data-eng-status="active">Reopen</button>`}
+            <button class="p-linkbtn" data-eng-export>Export everything (JSON)</button>
+            <button class="p-linkbtn p-linkbtn--danger" data-eng-delete>Delete engagement and files</button>
+          </div>
         </section>
       </div>
     </div>`;
@@ -351,6 +453,7 @@ async function route() {
     else { body = await viewOverview(c); active = "overview"; }
     main.innerHTML = shell(active, c, body);
     window.scrollTo(0, 0);
+    document.querySelectorAll(".admin-thread").forEach((t) => { t.scrollTop = t.scrollHeight; }); // newest messages in view
   } catch (err) {
     console.error(err);
     main.innerHTML = shell("", { review: 0, inquiries: 0, accepted: 0 }, `<p class="p-empty">${esc(err.message)}</p>`);
@@ -363,12 +466,54 @@ main.addEventListener("submit", async (e) => {
   const form = e.target;
   e.preventDefault();
   const btn = form.querySelector('button[type="submit"]');
+  const label = btn?.textContent;
   if (btn) btn.disabled = true;
   try {
     const hash = location.hash.slice(1);
     const engId = hash.startsWith("engagement=") ? hash.split("=")[1] : null;
     if (await pipelineSubmit(form, route)) return;
-    if (form.id === "room-form") {
+    if (form.id === "msg-form") {
+      const body = form.body.value.trim();
+      if (!body) return;
+      await store.postMessage(engId, body);
+      toast("Sent. The client has been emailed.");
+      await route();
+      document.getElementById("msg-body")?.focus();
+      const th = document.getElementById("thread"); if (th) th.scrollTop = th.scrollHeight;
+      return;
+    } else if (form.id === "team-msg-form") {
+      const body = form.body.value.trim();
+      if (!body) return;
+      await store.postMessage(engId, body, "team");
+      toast("Sent to the team.");
+      await route();
+      const th = document.getElementById("team-thread"); if (th) th.scrollTop = th.scrollHeight;
+      return;
+    } else if (form.id === "member-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const days = v("length");
+      const r = await store.inviteMember({ engagement_id: engId, email: v("email"), full_name: v("full_name"), role_label: v("role_label") || null, organization: v("organization") || null,
+        can_message: form.can_message.checked, can_files: form.can_files.checked, expires_at: days ? new Date(Date.now() + Number(days) * 864e5).toISOString() : null });
+      toast(r.invited ? `Invitation sent to ${v("email")}.` : `${v("full_name")} already had an account and has been added.`);
+      route();
+    } else if (form.id === "action-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const existing = await store.actionItems(engId);
+      const row = await store.addActionItem({ engagement_id: engId, title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: existing.length + 1 });
+      if (form.notify.checked) store.notify("action_item", row.id);
+      toast(form.notify.checked ? "Added. They've been emailed." : "Task added.");
+      route();
+    } else if (form.id === "deliverable-form") {
+      const file = form.file.files[0];
+      if (!file) throw new Error("Choose a file to share.");
+      checkFile(file);
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      if (btn) btn.textContent = "Uploading…";
+      const row = await store.uploadDeliverable(engId, { title: v("title") || file.name.replace(/\.[^.]+$/, ""), note: v("note") || null, milestone_id: v("milestone_id") || null, shared_with_team: !!form.team?.checked }, file);
+      if (form.notify.checked) store.notify("deliverable", row.id);
+      toast(form.notify.checked ? "Shared. The client has been emailed." : "Shared in the client's Documents.");
+      route();
+    } else if (form.id === "room-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const link = v("meeting_link");
       if (link && !/^https:\/\//.test(link)) throw new Error("The video link should start with https://");
@@ -414,7 +559,7 @@ main.addEventListener("submit", async (e) => {
       route();
     }
   } catch (err) { toast(err.message, true); }
-  finally { if (btn) btn.disabled = false; }
+  finally { if (btn) { btn.disabled = false; btn.textContent = label; } }
 });
 
 main.addEventListener("click", async (e) => {
@@ -423,6 +568,79 @@ main.addEventListener("click", async (e) => {
   try {
     if (await pipelineClick(t, route)) return;
     if (t.dataset.msDelete) { await store.deleteMilestone(t.dataset.msDelete); route(); }
+    else if (t.dataset.actionDelete) {
+      if (await confirmDialog({ title: "Remove this item?", body: "<p>It disappears from the client's list.</p>", confirmLabel: "Remove" })) { await store.deleteActionItem(t.dataset.actionDelete); route(); }
+    }
+    else if (t.dataset.deliverableDelete) {
+      const d = (await store.deliverables(location.hash.split("=")[1])).find((x) => x.id === t.dataset.deliverableDelete);
+      if (d && await confirmDialog({ title: "Remove this document?", body: `<p><strong>${esc(d.title)}</strong> is deleted and disappears from the client's Documents.</p>`, confirmLabel: "Remove" })) { await store.deleteDeliverable(d); toast("Removed."); route(); }
+    }
+    else if (t.dataset.engStatus) {
+      const engId = location.hash.split("=")[1];
+      await store.updateEngagement(engId, { status: t.dataset.engStatus });
+      toast(t.dataset.engStatus === "complete" ? "Marked complete. Team members' access has ended." : "Reopened.");
+      route();
+    }
+    else if (t.hasAttribute("data-eng-export")) {
+      const engId = location.hash.split("=")[1];
+      const data = await store.exportEngagement(engId);
+      const slug = (data.engagement.title || "engagement").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+      download(`${slug}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), "application/json");
+      toast("Export downloaded. Files are listed by path; download any you need from Deliverables and Documents.");
+    }
+    else if (t.hasAttribute("data-eng-delete")) {
+      const engId = location.hash.split("=")[1];
+      const eng = await store.engagement(engId);
+      const files = await store.engagementObjects(engId);
+      const typed = await new Promise((resolve) => {
+        const dlg = document.createElement("dialog");
+        dlg.className = "p-dialog";
+        dlg.innerHTML = `<form method="dialog" class="p-dialog__box">
+          <h2>Delete this engagement?</h2>
+          <p>This permanently deletes <strong>${esc(eng.title)}</strong>: its questionnaires' answers, messages, tasks, milestones, decisions, updates, AI drafts, team access and <strong>${files.length} stored file${files.length === 1 ? "" : "s"}</strong>. It can't be undone. Export it first if you need a record.</p>
+          <div class="p-field"><label for="del-confirm">Type the engagement title to confirm</label><input class="p-input" id="del-confirm" autocomplete="off"></div>
+          <div class="p-dialog__actions"><button class="btn btn--ghost btn--sm" value="cancel">Cancel</button><button class="btn btn--navy btn--sm" value="ok">Delete permanently</button></div></form>`;
+        document.body.appendChild(dlg);
+        dlg.addEventListener("close", () => { const v = dlg.querySelector("#del-confirm").value.trim(); resolve(dlg.returnValue === "ok" ? v : null); dlg.remove(); });
+        dlg.showModal();
+      });
+      if (typed === null) return;
+      if (typed !== eng.title.trim()) { toast("The title didn't match, so nothing was deleted.", true); return; }
+      const n = await store.deleteEngagement(engId);
+      toast(`Deleted, with ${n} file${n === 1 ? "" : "s"}.`);
+      location.hash = "clients";
+    }
+    else if (t.dataset.deliverableShare) {
+      await store.updateDeliverable(t.dataset.deliverableShare, { shared_with_team: t.dataset.share === "1" });
+      toast(t.dataset.share === "1" ? "The team can now see it." : "Only the client can see it now.");
+      route();
+    }
+    else if (t.dataset.teamFileDelete) {
+      const f = (window.__team?.teamFiles || []).find((x) => x.id === t.dataset.teamFileDelete);
+      if (f && await confirmDialog({ title: "Remove this team file?", body: `<p><strong>${esc(f.name)}</strong> is deleted for everyone.</p>`, confirmLabel: "Remove" })) { await store.deleteTeamFile(f); toast("Removed."); route(); }
+    }
+    else if (t.dataset.memberExtend || t.dataset.memberRevoke || t.dataset.memberRestore) {
+      const m = (window.__team?.roster?.members || []).find((x) => x.id === (t.dataset.memberExtend || t.dataset.memberRevoke || t.dataset.memberRestore));
+      if (!m) return;
+      if (t.dataset.memberExtend) {
+        const base = m.expires_at && new Date(m.expires_at).getTime() > Date.now() ? new Date(m.expires_at).getTime() : Date.now();
+        await store.setMemberAccess(m, { expires_at: new Date(base + 30 * 864e5).toISOString(), status: "active" });
+        toast(`${m.name}: access extended 30 days.`);
+      } else if (t.dataset.memberRevoke) {
+        if (!await confirmDialog({ title: `Remove ${esc(m.name)}?`, body: "<p>Their access ends immediately. What they shared stays with the engagement.</p>", confirmLabel: "Remove access" })) return;
+        await store.setMemberAccess(m, { status: "revoked" });
+        toast(`${m.name} no longer has access.`);
+      } else {
+        await store.setMemberAccess(m, { expires_at: new Date(Date.now() + 30 * 864e5).toISOString(), status: "active" });
+        toast(`${m.name} has access again for 30 days.`);
+      }
+      route();
+    }
+    else if (t.dataset.openFile) {
+      const win = window.open("", "_blank");
+      try { const url = await store.fileUrl(t.dataset.openFile); if (win) win.location.href = url; else location.href = url; }
+      catch (err) { if (win) win.close(); throw err; }
+    }
     else if (t.dataset.decDelete) {
       if (await confirmDialog({ title: "Remove this decision?", body: "<p>It disappears from the client's room.</p>", confirmLabel: "Remove" })) { await store.deleteDecision(t.dataset.decDelete); route(); }
     }
@@ -431,9 +649,9 @@ main.addEventListener("click", async (e) => {
     else if (t.dataset.complete) { await store.setAssignmentStatus(t.dataset.complete, "complete"); toast("Marked complete."); route(); }
     else if (t.dataset.regen) {
       t.disabled = true;
-      const id = await store.regenerateDraft(t.dataset.regen);
-      toast(isDemo ? "Sample draft created." : "Claude is drafting. You'll get an email when it's ready.");
-      if (isDemo) location.hash = `draft=${id}`; else route();
+      await store.regenerateDraft(t.dataset.regen);
+      toast("Claude is drafting. You'll get an email when it's ready.");
+      route();
     } else if (t.dataset.dismiss) {
       if (await confirmDialog({ title: "Dismiss this draft?", body: "<p>It won't be sent. You can generate a new one at any time.</p>", confirmLabel: "Dismiss" })) { await store.dismissDraft(t.dataset.dismiss); route(); }
     } else if (t.hasAttribute("data-copy")) {

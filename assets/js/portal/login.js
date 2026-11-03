@@ -1,6 +1,6 @@
-// Sign-in: magic link (live) or role picker (demo).
-import { store, isDemo } from "./store.js";
-import { $, $$, toast } from "./ui.js";
+// Sign-in by one-time email link, for invited addresses only.
+import { store } from "./store.js";
+import { $ } from "./ui.js";
 
 const go = (session) => location.replace(session.profile.role === "admin" ? "admin.html" : "dashboard.html");
 
@@ -13,19 +13,10 @@ const go = (session) => location.replace(session.profile.role === "admin" ? "adm
   const form = $("#login-form");
   const sent = $("#login-sent");
 
-  if (isDemo) {
-    $("#login-demo").hidden = false;
-    $$("[data-demo]").forEach((btn) => btn.addEventListener("click", async () => {
-      const session = await store.signIn(btn.dataset.demo);
-      go(session);
-    }));
-  }
-
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const email = form.email.value.trim();
     if (!form.checkValidity() || !email) { form.reportValidity(); return; }
-    if (isDemo) { toast("Demo mode: use the buttons below to explore."); return; }
     const button = form.querySelector("button");
     button.disabled = true;
     try {

@@ -1,6 +1,6 @@
 // Shared UI helpers for the Client Portal. Every value that came from a user
 // or the database goes through esc() before it touches innerHTML.
-import { store, isDemo } from "./store.js";
+import { store } from "./store.js";
 import { ADMIN_CONTACT } from "./config.js";
 
 export function esc(value) {
@@ -94,15 +94,6 @@ export function renderChrome(session, { active = "", admin = false } = {}) {
       location.href = "index.html";
     });
   }
-  if (isDemo && !document.querySelector(".demo-banner")) {
-    const bar = document.createElement("div");
-    bar.className = "demo-banner";
-    bar.setAttribute("role", "region");
-    bar.setAttribute("aria-label", "Demo mode");
-    bar.innerHTML = `<strong>Demo mode</strong>Fictional sample data, saved only in this browser. <button type="button">Reset demo</button>`;
-    bar.querySelector("button").addEventListener("click", async () => { await store.resetDemo(); location.reload(); });
-    header?.after(bar);
-  }
   const footer = document.getElementById("p-footer");
   if (footer) {
     footer.innerHTML = `<span>&copy; ${new Date().getFullYear()} Sypher Solutions · Confidential client workspace</span>
@@ -116,7 +107,59 @@ export async function requireSession({ admin = false } = {}) {
   try { session = await store.session(); } catch (err) { console.error(err); }
   if (!session) { location.replace("index.html"); return null; }
   if (admin && session.profile.role !== "admin") { location.replace("dashboard.html"); return null; }
+  if (admin && !(await twoStepGate(session))) return null;
   return session;
+}
+
+/**
+ * Admin access needs a two-step session (the database and the server functions enforce
+ * it too). Shows setup the first time, then asks for the 6-digit code once per session.
+ * Resolves true when the session is already verified.
+ */
+async function twoStepGate(session) {
+  const state = await store.mfaState();
+  if (state.level === "aal2") return true;
+  renderChrome(session, { active: "admin", admin: true });
+  const main = document.getElementById("main");
+  const shell = (inner) => `<div class="p-shell"><section class="p-card p-card--accent mfa">${inner}</section></div>`;
+  const codeField = `<div class="p-field"><label for="mfa-code">6-digit code</label>
+    <input class="p-input mfa__code" id="mfa-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" required></div>`;
+  let factorId = state.verified[0]?.id;
+
+  if (factorId) {
+    main.innerHTML = shell(`<p class="p-kicker">Two-step sign-in</p><h1 class="mfa__title">Enter your code</h1>
+      <p>Open your authenticator app and enter the current code for Sypher Solutions.</p>
+      <form class="p-form" id="mfa-form">${codeField}<button class="btn btn--navy" type="submit">Verify</button><p class="mfa__error" role="alert"></p></form>
+      <p class="p-muted mfa__help">Lost your phone? In the Supabase dashboard, open Authentication → Users → your account and remove the authenticator, then sign in again to set up a new one.</p>`);
+  } else {
+    const setup = await store.mfaEnroll();
+    factorId = setup.factorId;
+    main.innerHTML = shell(`<p class="p-kicker">Two-step sign-in</p><h1 class="mfa__title">Protect the admin account</h1>
+      <p>Your admin view shows every client's records, so it needs a code from an authenticator app as well as the email link. Use any authenticator app: Google Authenticator, Microsoft Authenticator, 1Password or similar.</p>
+      <ol class="mfa__steps">
+        <li><p><strong>Scan this code</strong> with the app.</p><img class="mfa__qr" src="${esc(setup.qr)}" alt="QR code for your authenticator app" width="180" height="180">
+          <p class="p-muted">Can't scan it? Enter this key in the app instead:</p><p class="mfa__secret"><code>${esc(setup.secret.replace(/(.{4})/g, "$1 ").trim())}</code></p></li>
+        <li><p><strong>Enter the 6-digit code</strong> the app shows.</p>
+          <form class="p-form" id="mfa-form">${codeField}<button class="btn btn--navy" type="submit">Turn on two-step sign-in</button><p class="mfa__error" role="alert"></p></form></li>
+      </ol>`);
+  }
+  const form = main.querySelector("#mfa-form");
+  form.querySelector("input").focus();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector("button");
+    const err = form.querySelector(".mfa__error");
+    btn.disabled = true; err.textContent = "";
+    try {
+      await store.mfaVerify(factorId, form.code.value);
+      location.reload();
+    } catch (error) {
+      err.textContent = error.message;
+      btn.disabled = false;
+      form.code.select();
+    }
+  });
+  return false;
 }
 
 export function statusPill(status) {

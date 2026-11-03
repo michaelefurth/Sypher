@@ -1,10 +1,14 @@
 // A private proposal, opened from the link Michael sends: /for/?p=<slug>.<token>
 // No sign-in. The token is the key; the server returns only what the client may see.
-import { store, isDemo, tokenFromParam } from "./portal/store.js";
+// From the client room, /for/?e=<engagement id> shows the signed agreement instead
+// (needs a portal session; the server checks the engagement is theirs).
+import { store, tokenFromParam } from "./portal/store.js";
 import { esc, paragraphs, fmtDate } from "./portal/ui.js";
 
 const main = document.getElementById("main");
-const token = tokenFromParam(new URLSearchParams(location.search).get("p"));
+const params = new URLSearchParams(location.search);
+const token = tokenFromParam(params.get("p"));
+const engagementId = params.get("e");
 const MODEL = { fixed: "Fixed fee", retainer: "Monthly retainer", advisory: "Advisory" };
 const ROMAN = ["i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x"];
 let proposal = null;
@@ -52,7 +56,8 @@ function responseBlock() {
       <p class="prop-seal__sig">${esc(proposal.signer_name)}</p>
       <p class="prop-seal__meta">${esc(proposal.signer_title || "")}${proposal.signer_title ? " · " : ""}${esc(fmtDate(proposal.responded_at))}</p>
       ${o ? `<p class="prop-seal__opt">${esc(o.name)}${o.fee ? ` · ${esc(o.fee)}` : ""}</p>` : ""}
-      <p>Thank you. Michael will be in touch to schedule the kickoff, and you’ll receive an invitation to your private client room, where the plan, milestones and every update will live.</p>
+      ${engagementId ? `<p><a class="btn btn--ghost btn--sm" href="../portal/dashboard.html#documents">Back to your client room</a></p>`
+        : `<p>Thank you. Michael will be in touch to schedule the kickoff, and you’ll receive an invitation to your private client room, where the plan, milestones and every update will live.</p>`}
     </div>`;
   }
   if (proposal.status === "declined") {
@@ -92,7 +97,6 @@ function render() {
   document.title = `${p.title} | Sypher Solutions`;
   const letterParas = String(c.letter || "").trim().split(/\n{2,}/);
   main.innerHTML = `
-  ${isDemo ? `<p class="prop-demo"><strong>Demo mode</strong> A fictional sample, saved only in this browser.</p>` : ""}
   ${p.status === "draft" ? `<p class="prop-demo"><strong>Draft preview</strong> Only you can see this. The client sees it once it’s marked as sent.</p>` : ""}
   <section class="prop-cover">
     <img class="prop-cover__mark" src="../assets/img/sypher-mark-480.webp" alt="" width="375" height="388">
@@ -204,9 +208,9 @@ function bindForm() {
 document.querySelector("[data-print]").addEventListener("click", () => window.print());
 
 (async () => {
-  if (!token) return notFound();
+  if (!token && !engagementId) return notFound();
   try {
-    proposal = await store.proposalByToken(token);
+    proposal = engagementId ? await store.agreement(engagementId) : await store.proposalByToken(token);
     if (!proposal) return notFound();
     render();
   } catch (err) {

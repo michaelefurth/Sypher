@@ -21,6 +21,13 @@ AddType application/manifest+json .webmanifest
   Header always set X-Frame-Options "SAMEORIGIN"
   Header always set Referrer-Policy "strict-origin-when-cross-origin"
   Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+  # HTTPS only, for a year (no includeSubDomains: other subdomains such as mail aren't covered).
+  Header always set Strict-Transport-Security "max-age=31536000"
+  # Content Security Policy: scripts, styles, fonts and images come from this site only; the
+  # portal talks to its Supabase project and nothing else. The one inline script (index.html,
+  # the headline reveal) is allowed by its hash: if you edit it, run `node scripts/check-csp.mjs`
+  # and update the hash here. Inline style attributes are allowed (the portal uses them).
+  Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'sha256-JTUX+OwDv8FY5NBTNDZi9MWGG+PbMSSYNCqC15opYKk='; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://pswzqwmluigojvizvfdc.supabase.co wss://pswzqwmluigojvizvfdc.supabase.co; manifest-src 'self'; worker-src 'self' blob:; frame-src 'none'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
   # Pages are always revalidated so updates show at once; assets are cached.
   <FilesMatch "\.html$">
     Header set Cache-Control "no-cache"

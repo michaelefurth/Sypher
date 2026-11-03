@@ -1,0 +1,78 @@
+name: Deploy Supabase
+
+# On every push to the production branch (the repository's default branch) that changes
+# anything under supabase/: re-run the access tests, apply new database migrations, then
+# deploy the edge functions. The website itself deploys separately, by cron on cPanel
+# (scripts/cpanel-autodeploy.sh).
+#
+# Needs two repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  a personal access token from supabase.com/dashboard/account/tokens
+#   SUPABASE_DB_PASSWORD   the database password (Supabase → Project Settings → Database)
+
+on:
+  push:
+    paths:
+      - "supabase/**"
+      - ".github/workflows/deploy-supabase.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-supabase
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: pswzqwmluigojvizvfdc
+
+jobs:
+  deploy:
+    name: Migrations and functions
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the secrets are set
+        run: |
+          missing=0
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::Add the SUPABASE_ACCESS_TOKEN repository secret."; missing=1; }
+          [ -n "$SUPABASE_DB_PASSWORD" ] || { echo "::error::Add the SUPABASE_DB_PASSWORD repository secret."; missing=1; }
+          exit $missing
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Access tests must pass before anything deploys
+        working-directory: supabase/tests
+        run: |
+          npm install --no-save --no-audit --no-fund @electric-sql/pglite
+          node rls-test.mjs
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link the project
+        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+
+      # The first four migrations were applied by hand in the SQL editor before automation, so
+      # Supabase's migration history doesn't know about them. Recording them as applied stops
+      # `db push` from running them again. Safe to repeat on every run.
+      - name: Record the migrations applied by hand before automation
+        run: supabase migration repair --status applied 20261001000000 20261002000000 20261103000000 20261104000000
+
+      - name: Migrations to apply
+        run: supabase db push --dry-run
+
+      - name: Apply migrations
+        run: supabase db push
+
+      - name: Deploy edge functions
+        run: supabase functions deploy --project-ref "$PROJECT_REF" --use-api

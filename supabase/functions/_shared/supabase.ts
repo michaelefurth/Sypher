@@ -14,7 +14,21 @@ export interface Caller {
   role: "admin" | "client";
 }
 
-/** Resolve the signed-in user from the request's Authorization header. */
+/** The assurance level in a session token ("aal1" email link, "aal2" verified authenticator code). */
+function assuranceLevel(token: string): string | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.aal === "string" ? payload.aal : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve the signed-in user from the request's Authorization header.
+ * Admin requests need a two-step session (aal2), matching public.is_admin() in the database.
+ * The token is verified by Supabase Auth (getUser) before its claims are read.
+ */
 export async function getCaller(req: Request): Promise<Caller | null> {
   const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return null;
@@ -22,6 +36,7 @@ export async function getCaller(req: Request): Promise<Caller | null> {
   if (error || !data.user) return null;
   const { data: profile } = await admin.from("profiles").select("role, email").eq("id", data.user.id).single();
   if (!profile) return null;
+  if (profile.role === "admin" && assuranceLevel(token) !== "aal2") return null;
   return { id: data.user.id, email: profile.email, role: profile.role };
 }
 
