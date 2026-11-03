@@ -41,6 +41,9 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/migrations/20261105000000_security_hardening.sql` | Two-step sign-in required for admin access, allowed file types, function privileges |
 | `supabase/config.toml` | Which functions need a signed-in caller, read by `supabase functions deploy` |
 | `scripts/check-csp.mjs` | Checks the site's Content Security Policy (in `.htaccess`) against every page |
+| `scripts/deploy-site.sh` | Copies the public website into `public_html`; used by `.cpanel.yml` and the cron auto-deploy |
+| `scripts/cpanel-autodeploy.sh` | Cron job on cPanel: deploys new commits on the production branch every few minutes |
+| `.github/workflows/deploy-supabase.yml` | On merge: access tests, then new database migrations, then the edge functions |
 | `.github/workflows/checks.yml` | Runs the access tests, script checks, the policy check, the build check and a type-check of the functions on every push |
 | `contact.html`, `assets/js/diagnostic.js` | The four-step diagnostic that replaces the contact form |
 | `for/index.html`, `assets/js/proposal.js`, `assets/css/proposal.css` | The private proposal page clients read and sign |
@@ -118,6 +121,31 @@ supabase functions deploy proposal-response --no-verify-jwt
 4. **Assign** the questionnaire with a due date and a short note. The client is emailed and sees it on sign-in.
 
 ---
+
+## Deploying
+
+Everything deploys from the repository's default branch (the production branch), so a merged pull request goes live on its own. The checks in `.github/workflows/checks.yml` run on every pull request; protect the branch so nothing merges without them (GitHub → Settings → Branches → add a rule for the default branch → require a pull request and the **Checks** status).
+
+**The website (cPanel cron).** `scripts/cpanel-autodeploy.sh` runs every 5 minutes. When GitHub has a commit the server hasn't deployed, it checks it out in cPanel's copy of the repository and copies the site into `public_html` with `scripts/deploy-site.sh`, the same script **Deploy HEAD Commit** runs. A failed copy is retried on the next run, and every deploy is logged in `~/logs/sypher-autodeploy.log`. One-time setup:
+
+1. **cPanel → Git Version Control:** note the repository path (for example `/home/syphsevs/repositories/Sypher`) and make sure its checked-out branch is the production branch.
+2. **cPanel → Terminal** (or SSH): run `/bin/bash <repository path>/scripts/cpanel-autodeploy.sh` once, then `tail ~/logs/sypher-autodeploy.log`. You should see "deployed: …". If it says it could not fetch, the server can't reach GitHub with its stored credentials; fix that under Git Version Control first.
+3. **cPanel → Advanced → Cron Jobs:** add, every 5 minutes (`*/5 * * * *`):
+   ```sh
+   /bin/bash /home/syphsevs/repositories/Sypher/scripts/cpanel-autodeploy.sh >/dev/null 2>&1
+   ```
+   (use your repository path). The script writes its own log, so cron emails are switched off.
+
+To stop auto-deploying, delete the cron job. Manual **Deploy HEAD Commit** keeps working either way.
+
+**Supabase (GitHub Actions).** `.github/workflows/deploy-supabase.yml` runs when a merge changes anything under `supabase/`: it re-runs the access tests, applies new migrations (`supabase db push`, which records each one so it runs once), then deploys every edge function with the sign-in rules in `supabase/config.toml`. The first four migrations were applied by hand before automation; the workflow records them as applied so they are never re-run. One-time setup, in GitHub → Settings → Secrets and variables → Actions → **New repository secret**:
+
+- `SUPABASE_ACCESS_TOKEN`: create one at supabase.com/dashboard/account/tokens.
+- `SUPABASE_DB_PASSWORD`: the database password (Supabase → Project Settings → Database; reset it there if you don't have it).
+
+The job runs in a GitHub environment called `production`. To approve each database change before it applies, add yourself as a required reviewer under GitHub → Settings → Environments → production. You can also run it by hand from the Actions tab (**Deploy Supabase → Run workflow**).
+
+Write new migrations so they can't be half-applied by accident: one change per file, named `YYYYMMDDHHMMSS_what_it_does.sql`, and run the access tests before merging.
 
 ## Diagnostic, proposals and client rooms
 
