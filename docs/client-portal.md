@@ -37,6 +37,7 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/migrations/20261001000000_client_portal.sql` | Database schema, row level security, storage bucket |
 | `supabase/migrations/20261002000000_bespoke_flow.sql` | Inquiries, proposals, milestones, decision log, meeting fields |
 | `supabase/migrations/20261103000000_client_room.sql` | Messages, deliverables, client to-dos, the signed agreement in the room, and the timeline |
+| `supabase/migrations/20261104000000_team_access.sql` | Team access for outside advisers: members, team thread, team files, task assignees |
 | `contact.html`, `assets/js/diagnostic.js` | The four-step diagnostic that replaces the contact form |
 | `for/index.html`, `assets/js/proposal.js`, `assets/css/proposal.css` | The private proposal page clients read and sign |
 | `supabase/functions/submit-inquiry` | Public: stores a diagnostic, drafts your pre-call brief with Claude, emails you and the prospect |
@@ -44,8 +45,9 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/invite-client` | Admin-only: invites a client by email and opens their engagement |
 | `supabase/functions/process-submission` | On submit: asks Claude for a draft update, emails you |
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
-| `supabase/functions/room-notify` | Signed-in users: emails the other side about a new message, document or to-do |
-| `supabase/tests/rls-test.mjs` | 88 automated security tests for the access rules |
+| `supabase/functions/room-notify` | Signed-in users: emails the right people about a new message, document, task or team file |
+| `supabase/functions/invite-member` | The client or admin: adds an attorney, CPA or other adviser to an engagement's team |
+| `supabase/tests/rls-test.mjs` | 143 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
@@ -56,7 +58,7 @@ Nothing written by the AI reaches a client until you publish it.
 The portal has its own project, **Sypher Client Portal** (ref `pswzqwmluigojvizvfdc`, us-west-1), in the Sypher organization. Keep it separate from the other "Sypher" project: the portal needs sign-ups turned off and defines its own `is_admin()`, which would break an app sharing the database.
 
 1. If you ever need to recreate it: create a project at [supabase.com](https://supabase.com) (the free tier is enough to start), in a US region.
-2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`, then `20261103000000_client_room.sql`.
+2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`, then `20261103000000_client_room.sql`, then `20261104000000_team_access.sql`.
 
 ### 2. Lock sign-in down to invited clients
 1. **Authentication → Sign In / Providers → Email:** enabled. Turn **off** "Allow new users to sign up". Clients join only by your invitation.
@@ -94,6 +96,7 @@ supabase functions deploy invite-client
 supabase functions deploy process-submission
 supabase functions deploy publish-update
 supabase functions deploy room-notify
+supabase functions deploy invite-member
 
 # These two are called by people who aren't signed in (prospects and proposal readers).
 supabase functions deploy submit-inquiry --no-verify-jwt
@@ -131,7 +134,15 @@ supabase functions deploy proposal-response --no-verify-jwt
 - **Messages:** a private thread with you. Each side is emailed when the other writes, at most once every 10 minutes per thread, so a burst of short messages becomes one alert. Your alert includes the text; the client's says only that you've written, like update emails.
 - **Timeline:** everything that has happened, newest first. Messages, documents, to-dos, decisions and milestone changes are logged by the database automatically; AI drafts never appear.
 
-In admin, each engagement page has the thread with a reply box, **For the client to do** (add items, optionally emailing the client), and **Deliverables** (upload a file up to 50 MB, give it a title, note and milestone, optionally email the client). Unread client messages show on the Overview and next to **Clients & engagements**.
+**Team access (outside advisers).** The client's **Team** tab, or the **Team** card on your engagement page, adds an attorney, CPA, lender or anyone else by email:
+
+- **Access is time-limited:** 30 days, 90 days (the default) or until the engagement ends. It stops by itself at the end date, when it's removed, or when the engagement is no longer active, and the database enforces each of these. Anyone with access can be extended 30 days, have messaging or files switched off, or be removed at any time; removed or expired people can be restored.
+- **What members see:** a separate **team thread**, **team files** (anyone may upload; you choose which deliverables the team can also see with "Share with team"), and **tasks** assigned to them, which they tick off. They also see the rest of the team's tasks for context.
+- **What members never see:** your private thread with the client, questionnaires, updates, decisions, milestones, the agreement, the timeline or AI drafts.
+- **Invitations:** new people get the Supabase "Invite user" email (restyle it under Authentication → Emails → Templates); people who already have a portal login get a short note. When a client adds someone, you're emailed straight away.
+- **Tasks:** the client can now add tasks for themselves or anyone on the team, and you can assign tasks to anyone. Assignees are emailed.
+
+In admin, each engagement page has the private thread with a reply box, the **Team** card (people, invitations, the team thread and team files), **Tasks** (for the client or any team member, optionally emailing them), and **Deliverables** (upload a file up to 50 MB, give it a title, note and milestone, optionally email the client). Unread client messages show on the Overview and next to **Clients & engagements**.
 
 You also manage milestones, decisions and the next meeting from the engagement page. To show a direct line or a response promise on the contact card, fill in `phone` and `response_promise` in `assets/js/portal/config.js`.
 

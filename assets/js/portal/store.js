@@ -345,13 +345,14 @@ export const store = {
   },
 
   // ---- messages ----
-  async messages(engagementId) {
+  /** A thread: "private" (client and Michael) or "team" (everyone on the engagement's team). */
+  async messages(engagementId, thread = "private") {
     const client = await sb();
-    return check(await client.from("messages").select("*").eq("engagement_id", engagementId).order("created_at"));
+    return check(await client.from("messages").select("*").eq("engagement_id", engagementId).eq("thread", thread).order("created_at"));
   },
-  async postMessage(engagementId, body) {
+  async postMessage(engagementId, body, thread = "private") {
     const client = await sb();
-    const row = check(await client.from("messages").insert({ engagement_id: engagementId, body }).select().single());
+    const row = check(await client.from("messages").insert({ engagement_id: engagementId, body, thread }).select().single());
     this.notify("message", row.id);
     return row;
   },
@@ -362,10 +363,63 @@ export const store = {
   /** Unread messages written by the other side, as { engagementId: count }. */
   async unreadCounts(userId) {
     const client = await sb();
-    const rows = check(await client.from("messages").select("engagement_id, author_id").is("read_at", null));
+    const rows = check(await client.from("messages").select("engagement_id, author_id").eq("thread", "private").is("read_at", null));
     const out = {};
     for (const r of rows) if (r.author_id !== userId) out[r.engagement_id] = (out[r.engagement_id] || 0) + 1;
     return out;
+  },
+
+  // ---- the team thread's read marker (one per person) ----
+  async markTeamRead(engagementId) {
+    const client = await sb();
+    check(await client.rpc("mark_team_read", { eng: engagementId }));
+  },
+  async teamLastRead(engagementId, userId) {
+    const client = await sb();
+    const rows = check(await client.from("thread_reads").select("last_read_at").eq("engagement_id", engagementId).eq("user_id", userId).eq("thread", "team"));
+    return rows[0]?.last_read_at || null;
+  },
+
+  // ---- the team: outside advisers on an engagement ----
+  /** { client, principals, members } — members include status ("active" | "expired" | "revoked"). */
+  async roster(engagementId) {
+    const client = await sb();
+    return check(await client.rpc("team_roster", { eng: engagementId }));
+  },
+  async inviteMember(payload) { return invoke("invite-member", payload); },
+  async setMemberAccess(member, { can_message, can_files, expires_at, status }) {
+    const client = await sb();
+    check(await client.rpc("set_member_access", {
+      member: member.id, p_can_message: can_message ?? member.can_message, p_can_files: can_files ?? member.can_files,
+      p_expires_at: expires_at === undefined ? member.expires_at : expires_at, p_status: status || "active",
+    }));
+  },
+  async touchMembership(engagementId) {
+    const client = await sb();
+    await client.rpc("touch_membership", { eng: engagementId });
+  },
+  async teamFiles(engagementId) {
+    const client = await sb();
+    return check(await client.from("team_files").select("*").eq("engagement_id", engagementId).order("created_at", { ascending: false }));
+  },
+  async uploadTeamFile(engagementId, file, note) {
+    const client = await sb();
+    const safe = file.name.replace(/[^\w.\-]+/g, "_").slice(-120);
+    const path = `${engagementId}/team/${crypto.randomUUID()}-${safe}`;
+    check(await client.storage.from("portal").upload(path, file, { upsert: false }));
+    try {
+      const row = check(await client.from("team_files").insert({ engagement_id: engagementId, path, name: file.name, size: file.size, note: note || null }).select().single());
+      this.notify("team_file", row.id);
+      return row;
+    } catch (err) {
+      await client.storage.from("portal").remove([path]);
+      throw err;
+    }
+  },
+  async deleteTeamFile(f) {
+    const client = await sb();
+    await client.storage.from("portal").remove([f.path]);
+    check(await client.from("team_files").delete().eq("id", f.id));
   },
 
   // ---- deliverables ----
@@ -384,6 +438,10 @@ export const store = {
       await client.storage.from("portal").remove([path]);
       throw err;
     }
+  },
+  async updateDeliverable(id, fields) {
+    const client = await sb();
+    check(await client.from("deliverables").update(fields).eq("id", id));
   },
   async deleteDeliverable(d) {
     const client = await sb();

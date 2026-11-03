@@ -222,9 +222,9 @@ await as(A, async () => {
 
   ok("client sees own action items only", (await rows(`select title from public.action_items`)).map((r) => r.title).join() === "Send bank statements");
   ok("client cannot edit action items directly", (await q(`update public.action_items set title = 'x' returning id`)).rows.length === 0);
-  ok("client cannot add action items", await fails(`insert into public.action_items (engagement_id, title) values ('${ENG_A}', 'x')`));
+  ok("client can add a to-do for themselves", !(await fails(`insert into public.action_items (engagement_id, title) values ('${ENG_A}', 'Call the bank')`)));
   await q(`select public.set_action_item_done('80000000-0000-0000-0000-000000000001', true)`);
-  const done = await rows(`select done_at, done_by from public.action_items`);
+  const done = await rows(`select done_at, done_by from public.action_items where id = '80000000-0000-0000-0000-000000000001'`);
   ok("client can tick their own action item", done[0].done_at !== null && done[0].done_by === A);
   ok("client cannot tick another client's item", await fails(`select public.set_action_item_done('80000000-0000-0000-0000-000000000002', true)`));
 
@@ -254,6 +254,114 @@ await as(ADMIN, async () => {
   ok("milestone progress reaches the timeline", (await q(`select * from public.activity where kind = 'milestone_current'`)).rows.length === 1);
   const n = (await q(`select public.mark_messages_read('${ENG_A}') n`)).rows[0].n;
   ok("admin marks the client's message read", n === 1);
+});
+
+// --- Team access: outside advisers on an engagement ---
+const CPA = "00000000-0000-0000-0000-0000000000c1", LAW = "00000000-0000-0000-0000-0000000000c2", OLD = "00000000-0000-0000-0000-0000000000c3";
+await db.exec(`
+  insert into auth.users (id, email) values ('${CPA}', 'cpa@firm.example'), ('${LAW}', 'law@firm.example'), ('${OLD}', 'old@firm.example');
+  insert into public.engagement_members (id, engagement_id, user_id, email, full_name, role_label, can_message, can_files, expires_at, status) values
+   ('90000000-0000-0000-0000-000000000001', '${ENG_A}', '${CPA}', 'cpa@firm.example', 'Pat CPA', 'CPA', true, true, now() + interval '30 days', 'active'),
+   ('90000000-0000-0000-0000-000000000002', '${ENG_A}', '${LAW}', 'law@firm.example', 'Lee Law', 'Attorney', false, true, null, 'active'),
+   ('90000000-0000-0000-0000-000000000003', '${ENG_A}', '${OLD}', 'old@firm.example', 'Old Adviser', 'Lender', true, true, now() - interval '1 day', 'active');
+  insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_A}', '${ADMIN}', 'Welcome to the team thread', 'team');
+  update public.deliverables set shared_with_team = true where id = '70000000-0000-0000-0000-000000000001';
+  insert into storage.objects (bucket_id, name) values ('portal', '${ENG_A}/deliverables/m.xlsx'), ('portal', '${ENG_A}/deliverables/private.pdf'), ('portal', '${ENG_A}/answers/q.pdf');
+  insert into public.deliverables (id, engagement_id, title, path, name) values
+   ('70000000-0000-0000-0000-000000000003', '${ENG_A}', 'Private memo', '${ENG_A}/deliverables/private.pdf', 'private.pdf');
+  insert into public.action_items (id, engagement_id, title, assignee_id) values
+   ('80000000-0000-0000-0000-000000000003', '${ENG_A}', 'Review the 2025 return', '${CPA}');
+`);
+
+ok("adding a member is logged to the timeline", (await rows(`select count(*)::int c from public.activity where kind = 'member_invited'`))[0].c === 3);
+
+await as(CPA, async () => {
+  const ce = await rows(`select title, access, next_meeting_at, meeting_link from public.client_engagements`);
+  ok("member sees the engagement as a member", ce.length === 1 && ce[0].access === "member" && ce[0].title === "Eng A");
+  ok("member never sees meeting details", ce[0].next_meeting_at === null && ce[0].meeting_link === null);
+  ok("member reads the team thread only", (await rows(`select thread from public.messages`)).every((r) => r.thread === "team") && (await rows(`select * from public.messages`)).length === 1);
+  await q(`insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_A}', '${CPA}', 'Return attached', 'team')`);
+  ok("member can post in the team thread", (await rows(`select * from public.messages`)).length === 2);
+  ok("member cannot post in the private thread", await fails(`insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_A}', '${CPA}', 'psst', 'private')`));
+  ok("member cannot post on another engagement", await fails(`insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_B}', '${CPA}', 'x', 'team')`));
+  ok("member sees shared deliverables only", (await rows(`select title from public.deliverables`)).map((r) => r.title).join() === "Cash model");
+  const objs = (await rows(`select name from storage.objects where bucket_id = 'portal' order by name`)).map((r) => r.name);
+  ok("member can open the shared deliverable file", objs.includes(`${ENG_A}/deliverables/m.xlsx`));
+  ok("member cannot open private files in storage", !objs.includes(`${ENG_A}/deliverables/private.pdf`) && !objs.includes(`${ENG_A}/answers/q.pdf`), objs.join(","));
+  ok("member can upload to the team folder", !(await fails(`insert into storage.objects (bucket_id, name) values ('portal', '${ENG_A}/team/return.pdf')`)));
+  ok("member cannot upload outside the team folder", await fails(`insert into storage.objects (bucket_id, name) values ('portal', '${ENG_A}/deliverables/fake.pdf')`));
+  await q(`insert into public.team_files (engagement_id, path, name) values ('${ENG_A}', '${ENG_A}/team/return.pdf', 'return.pdf')`);
+  ok("member can list a team file", (await rows(`select * from public.team_files`)).length === 1);
+  ok("member cannot file outside the team folder", await fails(`insert into public.team_files (engagement_id, path, name) values ('${ENG_A}', '${ENG_A}/x.pdf', 'x.pdf')`));
+  ok("member sees team tasks, not the client's own", (await rows(`select title from public.action_items`)).map((r) => r.title).join() === "Review the 2025 return");
+  await q(`select public.set_action_item_done('80000000-0000-0000-0000-000000000003', true)`);
+  ok("member ticks off their own task", (await rows(`select done_by from public.action_items`))[0].done_by === CPA);
+  ok("member cannot tick the client's task", await fails(`select public.set_action_item_done('80000000-0000-0000-0000-000000000001', false)`));
+  ok("member cannot add tasks", await fails(`insert into public.action_items (engagement_id, title, assignee_id) values ('${ENG_A}', 'x', '${CPA}')`));
+  for (const [what, sql] of [["questionnaires", "assignments"], ["answers", "answers"], ["updates", "publications"], ["decisions", "decisions"], ["milestones", "milestones"], ["timeline", "activity"], ["AI drafts", "report_drafts"]]) {
+    ok(`member cannot see ${what}`, (await rows(`select * from public.${sql}`)).length === 0);
+  }
+  ok("member cannot read the agreement", (await q(`select public.engagement_agreement('${ENG_A}') a`)).rows[0].a === null);
+  ok("member cannot read the base engagement (report context)", (await rows(`select * from public.engagements`)).length === 0);
+  const roster = (await q(`select public.team_roster('${ENG_A}') r`)).rows[0].r;
+  ok("member sees active teammates without their emails", roster.members.length === 2 && roster.members.every((m) => m.email === null) && roster.client.name);
+  ok("member cannot change anyone's access", await fails(`select public.set_member_access('90000000-0000-0000-0000-000000000001', true, true, null, 'active')`));
+  ok("member cannot add members", await fails(`insert into public.engagement_members (engagement_id, user_id, email) values ('${ENG_A}', '${B}', 'b@client.example')`));
+  await q(`select public.mark_team_read('${ENG_A}')`);
+  ok("member keeps a last-read mark on the team thread", (await rows(`select * from public.thread_reads`)).length === 1);
+});
+
+await as(LAW, async () => {
+  ok("member without messaging can't read the team thread", (await rows(`select * from public.messages`)).length === 0);
+  ok("member without messaging can't post", await fails(`insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_A}', '${LAW}', 'x', 'team')`));
+  ok("member with files sees team files", (await rows(`select * from public.team_files`)).length === 1);
+});
+
+await as(OLD, async () => {
+  ok("expired member sees no engagement", (await rows(`select * from public.client_engagements`)).length === 0);
+  ok("expired member reads nothing", (await rows(`select * from public.messages`)).length === 0 && (await rows(`select * from public.team_files`)).length === 0);
+  ok("expired member cannot post", await fails(`insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_A}', '${OLD}', 'x', 'team')`));
+  ok("expired member gets no roster", (await q(`select public.team_roster('${ENG_A}') r`)).rows[0].r === null);
+});
+
+await as(A, async () => {
+  ok("client sees both threads", (await rows(`select distinct thread from public.messages order by thread`)).map((r) => r.thread).join() === "private,team");
+  ok("client sees the team's files", (await rows(`select * from public.team_files`)).length === 1);
+  const roster = (await q(`select public.team_roster('${ENG_A}') r`)).rows[0].r;
+  ok("client sees every member with status and email", roster.members.length === 3 && roster.members.find((m) => m.name === "Old Adviser").status === "expired" && roster.members[0].email);
+  await q(`insert into public.action_items (engagement_id, title, assignee_id) values ('${ENG_A}', 'Draft the lease rider', '${LAW}')`);
+  ok("client can assign a task to a team member", (await rows(`select * from public.action_items where assignee_id = '${LAW}'`)).length === 1);
+  ok("client cannot assign to someone outside the team", await fails(`insert into public.action_items (engagement_id, title, assignee_id) values ('${ENG_A}', 'x', '${B}')`));
+  ok("client cannot add tasks to another engagement", await fails(`insert into public.action_items (engagement_id, title) values ('${ENG_B}', 'x')`));
+  await q(`select public.set_member_access('90000000-0000-0000-0000-000000000002', true, true, now() + interval '7 days', 'active')`);
+  ok("client can change a member's access", (await rows(`select can_message from public.engagement_members where id = '90000000-0000-0000-0000-000000000002'`))[0].can_message === true);
+  await q(`select public.set_member_access('90000000-0000-0000-0000-000000000001', true, true, null, 'revoked')`);
+  ok("client can revoke a member", (await rows(`select status from public.engagement_members where id = '90000000-0000-0000-0000-000000000001'`))[0].status === "revoked");
+  ok("client marks Michael's private messages read, never team ones", (await q(`select public.mark_messages_read('${ENG_A}') n`)).rows[0].n === 0);
+});
+
+await as(CPA, async () => {
+  ok("revoked member loses access at once", (await rows(`select * from public.client_engagements`)).length === 0 && (await rows(`select * from public.messages`)).length === 0);
+  ok("revoked member cannot post", await fails(`insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_A}', '${CPA}', 'x', 'team')`));
+});
+
+await as(B, async () => {
+  ok("other client cannot see A's team", (await rows(`select * from public.engagement_members`)).length === 0 && (await q(`select public.team_roster('${ENG_A}') r`)).rows[0].r === null);
+  ok("other client cannot change A's team", await fails(`select public.set_member_access('90000000-0000-0000-0000-000000000002', true, true, null, 'revoked')`));
+  ok("other client cannot see A's team files", (await rows(`select * from public.team_files`)).length === 0);
+});
+
+await as(ADMIN, async () => {
+  await q(`update public.engagements set status = 'complete' where id = '${ENG_A}'`);
+});
+await as(LAW, async () => {
+  ok("member access ends when the engagement is no longer active", (await rows(`select * from public.client_engagements`)).length === 0);
+});
+await as(ADMIN, async () => { await q(`update public.engagements set status = 'active' where id = '${ENG_A}'`); });
+
+await asAnon(async () => {
+  ok("anon cannot call team functions", await fails(`select public.team_roster('${ENG_A}')`) && await fails(`select public.is_member('${ENG_A}')`));
+  ok("anon cannot read team files", await fails(`select * from public.team_files`) || (await q(`select * from public.team_files`)).rows.length === 0);
 });
 
 console.log(results.join("\n"));

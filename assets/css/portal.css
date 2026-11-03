@@ -436,3 +436,59 @@ h2.p-kicker { font-family: var(--sans); font-weight: 450; line-height: 1.5; colo
 .p-card h3.room-sub { font-family: var(--sans); font-size: 0.66rem; }
 .timeline__text { margin: 0; }
 .timeline__when { margin: 0.15rem 0 0; }
+
+/* ---------- Team access ---------- */
+.room-cover--team { background: radial-gradient(120% 100% at 90% 0%, #17504c 0%, #0f3c45 55%, var(--navy-deep) 100%); }
+.msg__avatar--initials { display: inline-grid; place-items: center; background: #EEF6F5; color: var(--teal); font-family: var(--serif); font-size: 0.95rem; letter-spacing: 0; border-color: rgba(30, 127, 122, 0.45); }
+.msg__role { color: var(--muted); letter-spacing: 0.08em; text-transform: none; font-size: 0.72rem; }
+.msg--mine .msg__role { color: var(--on-dark-muted); }
+.thread-card__icon { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--navy); color: var(--champagne); font-family: var(--serif); font-size: 1.2rem; flex: none; }
+.thread-card .thread-card__head .p-muted { overflow-wrap: anywhere; }
+.p-grid .thread-card .thread { max-height: min(52vh, 520px); }
+
+.people { list-style: none; margin: 0; padding: 0; }
+.person { display: grid; grid-template-columns: 36px 1fr auto; gap: 0.85rem; align-items: start; padding: 0.85rem 0; border-top: 1px solid var(--rule); }
+.people > .person:first-child { border-top: 0; padding-top: 0.25rem; }
+.person .msg__avatar { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--champagne-deep); object-fit: cover; }
+.person__body { min-width: 0; }
+.person__name { font-family: var(--serif); font-size: 1.15rem; line-height: 1.25; color: var(--text-strong); }
+.person__role { font-size: 0.85rem; color: var(--slate); overflow-wrap: anywhere; }
+.person__access { font-size: 0.75rem; color: var(--muted); margin-top: 0.15rem; }
+.person.is-off .person__name, .person.is-off .person__role { color: var(--muted); }
+.person.is-off .msg__avatar { opacity: 0.5; }
+.person__manage > summary { list-style: none; padding-top: 0.3rem; }
+.person__manage > summary::-webkit-details-marker { display: none; }
+.person__manage[open] { grid-column: 1 / -1; }
+.person__manage[open] > summary { display: none; }
+.person__menu { display: grid; gap: 0.6rem; padding: 0.85rem 1rem; background: var(--paper); border: 1px solid var(--rule); margin-left: calc(36px + 0.85rem); }
+.p-linkbtn--danger { color: #9B3F2A; }
+.people--mini { display: grid; gap: 0.5rem; margin-bottom: 0.75rem; }
+.people--mini li { display: flex; gap: 0.6rem; align-items: center; font-size: 0.92rem; }
+.people--mini .msg__avatar { width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(30, 127, 122, 0.45); font-size: 0.8rem; }
+
+.room-add { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
+.room-add > summary { cursor: pointer; list-style: none; }
+.room-add > summary::-webkit-details-marker { display: none; }
+.room-add > summary::before { content: "+ "; }
+.room-add[open] > summary { margin-bottom: 1rem; }
+.room-add__lede { margin-bottom: 1rem; }
+.room-add__perms { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; }
+
+.todo__meta { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; flex: none; }
+.todo__meta .todo__due { padding-top: 0; }
+.todo__meta .p-linkbtn { font-size: 0.62rem; }
+.todo__who { font-size: 0.72rem; color: var(--teal); padding-top: 0.4rem; }
+.todo__check--ro { cursor: default; }
+.todo__box--ro { border-style: dashed; }
+.todo__box--ro.is-done { background: var(--rule-strong); border-style: solid; }
+@media (max-width: 520px) { .todo__meta { align-items: flex-start; flex-direction: row; flex-wrap: wrap; gap: 0.25rem 0.9rem; padding-left: calc(22px + 0.9rem); } }
+
+.doc__actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.35rem; }
+@media (max-width: 520px) { .doc > .doc__actions { grid-column: 2; flex-direction: row; align-items: center; gap: 1rem; } }
+.team-upload { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); }
+.team-upload__note { flex: 1 1 12rem; min-width: 0; }
+.team-upload .file-btn { cursor: pointer; }
+.person__name, .person__role, .person__access, .doc__title, .doc__note, .doc__meta, .todo__title, .todo__detail { margin: 0; }
+.doc__note { margin-top: 0.15rem; } .doc__meta, .person__access { margin-top: 0.2rem; }
+.msg__who { flex-wrap: wrap; gap: 0.15rem 0.75rem; }
+@media (max-width: 560px) { .msg__role { flex-basis: 100%; order: 3; } }
