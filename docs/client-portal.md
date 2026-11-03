@@ -38,6 +38,10 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/migrations/20261002000000_bespoke_flow.sql` | Inquiries, proposals, milestones, decision log, meeting fields |
 | `supabase/migrations/20261103000000_client_room.sql` | Messages, deliverables, client to-dos, the signed agreement in the room, and the timeline |
 | `supabase/migrations/20261104000000_team_access.sql` | Team access for outside advisers: members, team thread, team files, task assignees |
+| `supabase/migrations/20261105000000_security_hardening.sql` | Two-step sign-in required for admin access, allowed file types, function privileges |
+| `supabase/config.toml` | Which functions need a signed-in caller, read by `supabase functions deploy` |
+| `scripts/check-csp.mjs` | Checks the site's Content Security Policy (in `.htaccess`) against every page |
+| `.github/workflows/checks.yml` | Runs the access tests, script checks, the policy check and the build check on every push |
 | `contact.html`, `assets/js/diagnostic.js` | The four-step diagnostic that replaces the contact form |
 | `for/index.html`, `assets/js/proposal.js`, `assets/css/proposal.css` | The private proposal page clients read and sign |
 | `supabase/functions/submit-inquiry` | Public: stores a diagnostic, drafts your pre-call brief with Claude, emails you and the prospect |
@@ -47,7 +51,7 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
 | `supabase/functions/room-notify` | Signed-in users: emails the right people about a new message, document, task or team file |
 | `supabase/functions/invite-member` | The client or admin: adds an attorney, CPA or other adviser to an engagement's team |
-| `supabase/tests/rls-test.mjs` | 143 automated security tests for the access rules |
+| `supabase/tests/rls-test.mjs` | 160 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
@@ -58,7 +62,7 @@ Nothing written by the AI reaches a client until you publish it.
 The portal has its own project, **Sypher Client Portal** (ref `pswzqwmluigojvizvfdc`, us-west-1), in the Sypher organization. Keep it separate from the other "Sypher" project: the portal needs sign-ups turned off and defines its own `is_admin()`, which would break an app sharing the database.
 
 1. If you ever need to recreate it: create a project at [supabase.com](https://supabase.com) (the free tier is enough to start), in a US region.
-2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`, then `20261103000000_client_room.sql`, then `20261104000000_team_access.sql`.
+2. **SQL Editor →** paste the whole of `supabase/migrations/20261001000000_client_portal.sql` → **Run**. Then do the same with `20261002000000_bespoke_flow.sql`, then `20261103000000_client_room.sql`, then `20261104000000_team_access.sql`, then `20261105000000_security_hardening.sql`.
 
 ### 2. Lock sign-in down to invited clients
 1. **Authentication → Sign In / Providers → Email:** enabled. Turn **off** "Allow new users to sign up". Clients join only by your invitation.
@@ -72,7 +76,7 @@ The portal has its own project, **Sypher Client Portal** (ref `pswzqwmluigojvizv
    ```sql
    update public.profiles set role = 'admin' where email = 'michael@sypher.solutions';
    ```
-3. Recommended: turn on multi-factor authentication for your account.
+3. **Two-step sign-in is required for admin access.** The first time you open `/portal/admin.html`, the portal shows a QR code: scan it with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password…) and enter the 6-digit code. After that it asks for a code once per session. The database and the functions both refuse admin requests from a session without a verified code, so a stolen email link alone opens nothing. Supabase enables authenticator-app (TOTP) sign-in by default; if setup fails, check **Authentication → Sign In / Providers → Multi-Factor**. Lost your phone? Remove the factor under **Authentication → Users → your account**, then sign in again to set up a new one.
 
 ### 4. Email (Resend)
 1. Create an account at [resend.com](https://resend.com), verify `sypher.solutions` (it gives you DNS records to add), and create an API key.
@@ -99,6 +103,7 @@ supabase functions deploy room-notify
 supabase functions deploy invite-member
 
 # These two are called by people who aren't signed in (prospects and proposal readers).
+# supabase/config.toml already marks these two as public, so the flag is optional.
 supabase functions deploy submit-inquiry --no-verify-jwt
 supabase functions deploy proposal-response --no-verify-jwt
 ```
@@ -217,10 +222,14 @@ Admin → Questionnaires → **Download template** gives you a starter file.
 - **A proposal is readable only with its link**, through two database functions that return the client-facing fields and accept or decline. Drafts and withdrawn proposals return nothing; your own previews aren't counted as views.
 - **Clients see only their own engagements, questions, answers, files, milestones, decisions and published updates.** Another client's data is invisible to them, and the private report context and all AI drafts are admin-only.
 - Answers lock on submission; only you can reopen them.
-- Files go to a private storage bucket in per-engagement folders, served through short-lived signed links (5 minutes). The upload limit is 50 MB.
+- Files go to a private storage bucket in per-engagement folders, served through short-lived signed links (5 minutes). The upload limit is 50 MB, and only documents, spreadsheets, slides, CSV, text and images are accepted (PDF, Word, Excel, PowerPoint, RTF, CSV, TXT, PNG, JPG, GIF, WebP, HEIC). The bucket enforces the list; the portal checks it first so people get a clear message.
+- **Admin access needs two-step sign-in** (an authenticator-app code on top of the email link). `public.is_admin()` checks the session's assurance level, and the functions check it too.
+- **Outside team members** see only the team thread, team files, shared deliverables and their own tasks, and lose access at their end date, when removed, or when the engagement is marked complete.
+- **The website sends strict security headers** (`.htaccess`): HTTPS only (HSTS), and a Content Security Policy that lets pages run only the site's own scripts and talk only to the Supabase project. If you add an inline script or an outside service (analytics, a map, a booking widget), the policy must allow it: run `node scripts/check-csp.mjs` and update `.htaccess`.
+- **Closing out.** On an engagement page in admin, **Mark complete** ends outside team access and leaves the client read access. **Export everything** downloads all of the engagement's records as JSON (files are listed by path; download any you need first). **Delete engagement and files** asks you to type the title, then removes the stored files and every record.
 - Clients can't change their own role. Sign-in is by one-time email link, for invited addresses only.
 - The service-role key and the Anthropic and Resend keys live only in Supabase function secrets, never in the browser.
-- Re-run the access tests after any schema change:
+- Re-run the access tests after any schema change (GitHub runs them, the script checks, the policy check and the build check on every push):
   ```sh
   cd supabase/tests && npm i @electric-sql/pglite && node rls-test.mjs
   ```

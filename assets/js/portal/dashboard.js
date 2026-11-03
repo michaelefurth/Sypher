@@ -14,7 +14,7 @@
 //   Files      team files and shared deliverables (if they may see files)
 //
 // Tabs are hash routes, so the back button and email links work.
-import { store } from "./store.js";
+import { store, FILE_ACCEPT, checkFile } from "./store.js";
 import { ADMIN_CONTACT } from "./config.js";
 import { esc, paragraphs, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, download, confirmDialog } from "./ui.js";
 
@@ -557,7 +557,7 @@ function teamFilesCard({ withShared = false } = {}) {
     ${shared.length ? `<h3 class="room-sub">Shared by Michael</h3><ul class="doc-list">${shared.map((d) => deliverableRow(d)).join("")}</ul><h3 class="room-sub">From the team</h3>` : ""}
     ${room.teamFiles.length ? `<ul class="doc-list">${room.teamFiles.map(teamFileRow).join("")}</ul>` : `<p class="p-muted">Files anyone on the team adds appear here. Up to 50 MB each.</p>`}
     <form class="team-upload" id="team-file-form">
-      <label class="btn btn--ghost btn--sm file-btn">Choose a file<input type="file" name="file" required></label>
+      <label class="btn btn--ghost btn--sm file-btn">Choose a file<input type="file" name="file" accept="${FILE_ACCEPT}" required></label>
       <span class="team-upload__name p-muted" aria-live="polite"></span>
       <input class="p-input team-upload__note" name="note" maxlength="300" placeholder="Note (optional)" aria-label="Note about the file">
       <button class="btn btn--navy btn--sm" type="submit">Upload</button>
@@ -767,7 +767,9 @@ main.addEventListener("change", async (e) => {
   }
   if (e.target.matches('#team-file-form input[type="file"]')) {
     const f = e.target.files[0];
-    e.target.form.querySelector(".team-upload__name").textContent = f ? `${f.name} · ${fmtSize(f.size)}` : "";
+    let note = f ? `${f.name} · ${fmtSize(f.size)}` : "";
+    if (f) { try { checkFile(f); } catch (err) { note = err.message; e.target.value = ""; } }
+    e.target.form.querySelector(".team-upload__name").textContent = note;
     return;
   }
   const perm = e.target.closest("[data-member-perm]");
@@ -831,7 +833,7 @@ main.addEventListener("submit", async (e) => {
     } else if (form.id === "team-file-form") {
       const file = form.file.files[0];
       if (!file) throw new Error("Choose a file first.");
-      if (file.size > 50 * 1024 * 1024) throw new Error("Files must be under 50 MB.");
+      checkFile(file);
       if (btn) btn.textContent = "Uploading…";
       await store.uploadTeamFile(eng.id, file, form.note.value.trim());
       toast("Shared with the team.");

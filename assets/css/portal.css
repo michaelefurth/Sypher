@@ -492,3 +492,14 @@ h2.p-kicker { font-family: var(--sans); font-weight: 450; line-height: 1.5; colo
 .doc__note { margin-top: 0.15rem; } .doc__meta, .person__access { margin-top: 0.2rem; }
 .msg__who { flex-wrap: wrap; gap: 0.15rem 0.75rem; }
 @media (max-width: 560px) { .msg__role { flex-basis: 100%; order: 3; } }
+
+/* ---------- Two-step sign-in ---------- */
+.mfa { max-width: 560px; margin: clamp(1rem, 4vw, 3rem) auto; }
+.mfa__title { font-size: clamp(1.8rem, 1.4rem + 1.4vw, 2.4rem); margin-bottom: 0.75rem; }
+.mfa__steps { margin: 1.5rem 0 0; padding-left: 1.2rem; display: grid; gap: 1.5rem; }
+.mfa__steps li::marker { color: var(--bronze); font-family: var(--serif); }
+.mfa__qr { display: block; margin: 0.75rem 0; background: #fff; padding: 8px; border: 1px solid var(--rule); width: 180px; height: 180px; }
+.mfa__secret code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.95rem; letter-spacing: 0.05em; background: var(--paper); border: 1px solid var(--rule); padding: 0.4rem 0.6rem; display: inline-block; overflow-wrap: anywhere; }
+.mfa__code { font-size: 1.4rem; letter-spacing: 0.3em; max-width: 12rem; font-variant-numeric: tabular-nums; }
+.mfa__error { color: #9B3F2A; min-height: 1.2em; margin: 0; }
+.mfa__help { margin-top: 1.5rem; font-size: 0.85rem; }

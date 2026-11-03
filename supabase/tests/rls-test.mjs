@@ -18,12 +18,14 @@ await db.exec(`
   create schema auth; create schema storage;
   create table auth.users (id uuid primary key, email text, raw_user_meta_data jsonb default '{}');
   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-  create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint);
+  create function auth.jwt() returns jsonb language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claims', true), ''), '{}')::jsonb $$;
+  create table storage.buckets (id text primary key, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
   create table storage.objects (id uuid primary key default gen_random_uuid(), bucket_id text, name text);
   alter table storage.objects enable row level security;
   create function storage.foldername(name text) returns text[] language sql immutable as $$ select (string_to_array(name, '/'))[1:array_length(string_to_array(name, '/'),1)-1] $$;
   grant usage on schema public, auth, storage to anon, authenticated;
   grant execute on function auth.uid() to anon, authenticated;
+  grant execute on function auth.jwt() to anon, authenticated;
   grant all on storage.objects to authenticated;
   alter default privileges in schema public grant all on tables to anon, authenticated;
   alter default privileges in schema public grant all on functions to anon, authenticated;
@@ -59,8 +61,11 @@ await db.exec(`
   insert into public.publications (engagement_id, title, body) values ('10000000-0000-0000-0000-000000000001', 'Pub A', 'Body');
 `);
 
-async function as(user, fn) {
-  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${user}', false);`);
+// Sessions: the admin signs in with a verified authenticator code (aal2) unless a test says
+// otherwise; everyone else signs in with an email link (aal1).
+async function as(user, fn, aal = user === ADMIN ? "aal2" : "aal1") {
+  await db.exec(`set role authenticated; select set_config('request.jwt.claim.sub', '${user}', false);
+    select set_config('request.jwt.claims', '${JSON.stringify({ sub: user, aal })}', false);`);
   try { return await fn(); } finally { await db.exec(`reset role;`); }
 }
 const q = (s, p) => db.query(s, p);
@@ -134,7 +139,7 @@ await db.exec(`
 `);
 
 async function asAnon(fn) {
-  await db.exec(`set role anon; select set_config('request.jwt.claim.sub', '', false);`);
+  await db.exec(`set role anon; select set_config('request.jwt.claim.sub', '', false); select set_config('request.jwt.claims', '{"role":"anon"}', false);`);
   try { return await fn(); } finally { await db.exec(`reset role;`); }
 }
 
@@ -364,5 +369,45 @@ await asAnon(async () => {
   ok("anon cannot read team files", await fails(`select * from public.team_files`) || (await q(`select * from public.team_files`)).rows.length === 0);
 });
 
+// --- Security hardening: two-step admin sign-in, file types, function privileges ---
+await as(ADMIN, async () => {
+  ok("admin with an email link only (aal1) is not treated as admin", (await q(`select public.is_admin() a`)).rows[0].a === false);
+  ok("aal1 admin sees no engagements", (await q(`select * from public.engagements`)).rows.length === 0);
+  ok("aal1 admin sees no inquiries or AI drafts", (await q(`select * from public.inquiries`)).rows.length === 0 && (await q(`select * from public.report_drafts`)).rows.length === 0);
+  ok("aal1 admin cannot change engagements", (await q(`update public.engagements set title = 'x' returning id`)).rows.length === 0);
+  ok("aal1 admin cannot promote anyone", (await q(`update public.profiles set role = 'admin' where id = '${A}' returning id`)).rows.length === 0);
+}, "aal1");
+await as(ADMIN, async () => {
+  ok("admin with a verified code (aal2) is admin", (await q(`select public.is_admin() a`)).rows[0].a === true);
+  ok("aal2 admin reads every engagement", (await q(`select * from public.engagements`)).rows.length === 2);
+});
+await as(A, async () => {
+  ok("a client claiming aal2 is still not admin", (await q(`select public.is_admin() a`)).rows[0].a === false);
+}, "aal2");
+
+const mimes = (await rows(`select allowed_mime_types m from storage.buckets where id = 'portal'`))[0].m || [];
+ok("file bucket allows PDFs and spreadsheets", mimes.includes("application/pdf") && mimes.includes("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+ok("file bucket blocks scripts and web pages", !mimes.some((m) => /html|javascript|x-sh|octet-stream|svg/.test(m)), mimes.join(","));
+
+const priv = await rows(`select p.proname, has_function_privilege('anon', p.oid, 'execute') anon, has_function_privilege('authenticated', p.oid, 'execute') auth,
+  coalesce(array_to_string(p.proconfig, ','), '') cfg from pg_proc p where p.pronamespace = 'public'::regnamespace
+  and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')`); // our functions, not extensions'
+const fn = (n) => priv.find((r) => r.proname === n) || {};
+ok("signed-out visitors cannot call the access helpers",
+  ["is_admin", "owns_engagement", "owns_assignment", "questionnaire_assigned_to_me", "assignment_is_open", "submit_assignment"].every((n) => fn(n).anon === false));
+ok("signed-in users keep the helpers their access rules need", ["is_admin", "owns_engagement", "owns_assignment"].every((n) => fn(n).auth === true));
+ok("trigger functions cannot be called directly by anyone",
+  ["handle_new_user", "protect_profile_fields", "touch_answer", "touch_proposal", "log_room_event"].every((n) => fn(n).anon === false && fn(n).auth === false));
+ok("proposal links still work for signed-out readers", fn("get_proposal").anon === true && fn("respond_proposal").anon === true);
+ok("every function has a fixed search_path", priv.every((r) => /search_path/.test(r.cfg)), priv.filter((r) => !/search_path/.test(r.cfg)).map((r) => r.proname).join(","));
+await db.exec(`insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000d1', 'new@client.example')`);
+ok("new sign-ups still get a profile with the trigger locked down", (await rows(`select count(*)::int c from public.profiles where email = 'new@client.example'`))[0].c === 1);
+await as(A, async () => {
+  await q(`insert into public.messages (engagement_id, author_id, body) values ('${ENG_A}', '${A}', 'after hardening')`);
+  ok("timeline triggers still fire for clients", (await q(`select * from public.messages where body = 'after hardening'`)).rows.length === 1);
+});
+
 console.log(results.join("\n"));
-console.log(results.some((r) => r.startsWith("FAIL")) ? "\nSOME TESTS FAILED" : `\nALL ${results.length} TESTS PASSED`);
+const failed = results.some((r) => r.startsWith("FAIL"));
+console.log(failed ? "\nSOME TESTS FAILED" : `\nALL ${results.length} TESTS PASSED`);
+if (failed) process.exitCode = 1;

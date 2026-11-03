@@ -13,6 +13,58 @@ export const DEFAULT_TERMS = [
   "Licensed advice. Sypher Solutions is not a CPA or law firm. Where tax, legal or regulatory sign-off is needed, it comes from licensed professionals.",
 ].join("\n\n");
 
+/** File types the portal accepts (the storage bucket enforces the same list server-side). */
+export const FILE_TYPES = {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  rtf: "application/rtf",
+  csv: "text/csv",
+  txt: "text/plain",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+};
+/** For <input type="file" accept>. */
+export const FILE_ACCEPT = Object.keys(FILE_TYPES).map((x) => `.${x}`).join(",");
+export const MAX_FILE_BYTES = 50 * 1024 * 1024;
+/** Check a file before upload; returns the content type to store it with. */
+export function checkFile(file) {
+  const ext = (file.name.split(".").pop() || "").toLowerCase();
+  const type = FILE_TYPES[ext];
+  if (!type || !file.name.includes(".")) {
+    throw new Error("That file type isn't accepted. Use PDF, Word, Excel, PowerPoint, CSV, text or an image (PNG, JPG, HEIC).");
+  }
+  if (file.size > MAX_FILE_BYTES) throw new Error("Files must be under 50 MB.");
+  if (!file.size) throw new Error("That file is empty.");
+  return type;
+}
+
+/** supabase-js hands back the QR code as "data:image/svg+xml;utf-8,<svg …>", which browsers may not
+ *  render as written (";utf-8" isn't a valid parameter and the markup isn't encoded). Re-encode it. */
+function svgDataUrl(value) {
+  let svg = String(value || "");
+  // Strip any "data:image/svg+xml;…," prefixes (supabase-js adds one; some servers add another).
+  for (let m; (m = svg.match(/^data:image\/svg\+xml[^,]*,([\s\S]*)$/i));) svg = m[1];
+  try { if (/^%3C/i.test(svg)) svg = decodeURIComponent(svg); } catch (_) { /* already plain */ }
+  if (!/^\s*<svg[\s>]/i.test(svg)) return value; // not an SVG after all: leave it alone
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/** The same file, labelled with its checked type. supabase-js sends a File's own type, which some
+ *  browsers leave blank (CSV, HEIC), and the storage bucket rejects anything not on its list. */
+function typed(file, contentType) {
+  return file.type === contentType ? file : new File([file], file.name, { type: contentType, lastModified: file.lastModified });
+}
+
 /** The private link a client opens to read a proposal. */
 export function proposalLink(p, base = location.href) {
   return `${siteRoot(base)}for/?p=${encodeURIComponent((p.slug ? `${p.slug}.` : "") + p.token)}`;
@@ -131,6 +183,30 @@ export const store = {
   },
   async signOut() { const client = await sb(); await client.auth.signOut(); },
 
+  // ---- two-step sign-in (authenticator app); required for admin access ----
+  async mfaState() {
+    const client = await sb();
+    const { data: aal, error } = await client.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (error) throw new Error(error.message);
+    const { data: factors, error: e2 } = await client.auth.mfa.listFactors();
+    if (e2) throw new Error(e2.message);
+    return { level: aal.currentLevel, verified: factors.totp || [], all: factors.all || [] };
+  },
+  async mfaEnroll() {
+    const client = await sb();
+    const { all } = await this.mfaState();
+    // An abandoned setup leaves an unverified factor behind; clear it so setup can restart.
+    for (const f of all.filter((x) => x.status !== "verified")) await client.auth.mfa.unenroll({ factorId: f.id });
+    const { data, error } = await client.auth.mfa.enroll({ factorType: "totp", friendlyName: `Sypher admin ${new Date().toISOString().slice(0, 10)}` });
+    if (error) throw new Error(error.message);
+    return { factorId: data.id, qr: svgDataUrl(data.totp.qr_code), secret: data.totp.secret };
+  },
+  async mfaVerify(factorId, code) {
+    const client = await sb();
+    const { error } = await client.auth.mfa.challengeAndVerify({ factorId, code: String(code).replace(/\s+/g, "") });
+    if (error) throw new Error(/invalid|expired/i.test(error.message) ? "That code didn't match. Codes change every 30 seconds; try the current one." : error.message);
+  },
+
   // ---- client ----
   async myEngagements() {
     const client = await sb();
@@ -167,8 +243,9 @@ export const store = {
   async uploadFile(engagementId, assignmentId, questionId, file) {
     const client = await sb();
     const safe = file.name.replace(/[^\w.\-]+/g, "_").slice(-120);
+    const contentType = checkFile(file);
     const path = `${engagementId}/${crypto.randomUUID()}-${safe}`;
-    check(await client.storage.from("portal").upload(path, file, { upsert: false }));
+    check(await client.storage.from("portal").upload(path, typed(file, contentType), { upsert: false, contentType }));
     return check(await client.from("files").insert({ engagement_id: engagementId, assignment_id: assignmentId, question_id: questionId, path, name: file.name, size: file.size }).select().single());
   },
   async fileUrl(path) {
@@ -405,8 +482,9 @@ export const store = {
   async uploadTeamFile(engagementId, file, note) {
     const client = await sb();
     const safe = file.name.replace(/[^\w.\-]+/g, "_").slice(-120);
+    const contentType = checkFile(file);
     const path = `${engagementId}/team/${crypto.randomUUID()}-${safe}`;
-    check(await client.storage.from("portal").upload(path, file, { upsert: false }));
+    check(await client.storage.from("portal").upload(path, typed(file, contentType), { upsert: false, contentType }));
     try {
       const row = check(await client.from("team_files").insert({ engagement_id: engagementId, path, name: file.name, size: file.size, note: note || null }).select().single());
       this.notify("team_file", row.id);
@@ -430,8 +508,9 @@ export const store = {
   async uploadDeliverable(engagementId, fields, file) {
     const client = await sb();
     const safe = file.name.replace(/[^\w.\-]+/g, "_").slice(-120);
+    const contentType = checkFile(file);
     const path = `${engagementId}/deliverables/${crypto.randomUUID()}-${safe}`;
-    check(await client.storage.from("portal").upload(path, file, { upsert: false }));
+    check(await client.storage.from("portal").upload(path, typed(file, contentType), { upsert: false, contentType }));
     try {
       return check(await client.from("deliverables").insert({ engagement_id: engagementId, path, name: file.name, size: file.size, ...fields }).select().single());
     } catch (err) {
@@ -471,6 +550,57 @@ export const store = {
   async agreement(engagementId) {
     const client = await sb();
     return check(await client.rpc("engagement_agreement", { eng: engagementId }));
+  },
+
+  // ---- closing out an engagement (admin) ----
+  /** Everything stored for an engagement, as one JSON-ready object. Files are listed, not embedded. */
+  async exportEngagement(engagementId) {
+    const client = await sb();
+    const by = (table, extra = "*") => client.from(table).select(extra).eq("engagement_id", engagementId).then(check);
+    const engagement = check(await client.from("engagements").select("*, client:profiles(id, email, full_name, company)").eq("id", engagementId).single());
+    const [assignments, milestones, decisions, messages, actionItems, deliverables, files, teamFiles, publications, drafts, activity, members, proposals] = await Promise.all([
+      by("assignments"), by("milestones"), by("decisions"), by("messages"), by("action_items"), by("deliverables"), by("files"),
+      by("team_files"), by("publications"), by("report_drafts"), by("activity"), by("engagement_members"),
+      client.from("proposals").select("*").eq("engagement_id", engagementId).then(check),
+    ]);
+    const asgIds = assignments.map((a) => a.id);
+    const qIds = [...new Set(assignments.map((a) => a.questionnaire_id))];
+    const [answers, questionnaires] = await Promise.all([
+      asgIds.length ? client.from("answers").select("*").in("assignment_id", asgIds).then(check) : [],
+      qIds.length ? client.from("questionnaires").select("*, questions(*)").in("id", qIds).then(check) : [],
+    ]);
+    return {
+      exported_at: new Date().toISOString(), engagement, milestones, decisions, action_items: actionItems, questionnaires, assignments, answers,
+      publications, report_drafts: drafts, messages, team: members, deliverables, client_files: files, team_files: teamFiles, proposals, activity,
+      note: "Files are listed by path. Download them from the portal before deleting the engagement.",
+    };
+  },
+  /** Every stored file under an engagement's folder, including deliverables/ and team/. */
+  async engagementObjects(engagementId) {
+    const client = await sb();
+    const bucket = client.storage.from("portal");
+    const out = [];
+    const walk = async (prefix) => {
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await bucket.list(prefix, { limit: 1000, offset });
+        if (error) throw new Error(error.message);
+        for (const item of data) {
+          if (item.id === null) await walk(`${prefix}/${item.name}`); // a folder
+          else out.push(`${prefix}/${item.name}`);
+        }
+        if (data.length < 1000) break;
+      }
+    };
+    await walk(engagementId);
+    return out;
+  },
+  /** Deletes an engagement's files, then the engagement and everything that belongs to it. */
+  async deleteEngagement(engagementId) {
+    const client = await sb();
+    const paths = await this.engagementObjects(engagementId);
+    for (let i = 0; i < paths.length; i += 100) check(await client.storage.from("portal").remove(paths.slice(i, i + 100)));
+    check(await client.from("engagements").delete().eq("id", engagementId));
+    return paths.length;
   },
 
   /** Email the other side about something new. Best effort: never blocks the action itself. */

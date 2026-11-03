@@ -1,6 +1,6 @@
 // Questionnaire: section rail, autosaving answers, "don't know yet" + notes,
 // file attachments, filters, and a review-and-submit step that locks answers.
-import { store } from "./store.js";
+import { store, FILE_ACCEPT, checkFile } from "./store.js";
 import { esc, $, $$, fmtDate, renderChrome, requireSession, toast, confirmDialog, statusPill } from "./ui.js";
 
 const main = document.getElementById("main");
@@ -65,7 +65,7 @@ function card(q) {
         ${editable ? `<div class="qcard__tools">
           <label class="p-check"><input type="checkbox" data-field="unknown" ${isPending(a) ? "checked" : ""}> I don't know yet</label>
           <button type="button" class="p-linkbtn" data-add-note ${hasNote ? "hidden" : ""}>Add a note</button>
-          <span class="p-linkbtn file-btn">Attach a file<input type="file" data-file aria-label="Attach a file to question ${esc(q.number || q.position)}"></span>
+          <span class="p-linkbtn file-btn">Attach a file<input type="file" data-file accept="${FILE_ACCEPT}" aria-label="Attach a file to question ${esc(q.number || q.position)}"></span>
           <span class="qcard__state" aria-live="polite"></span>
         </div>` : ""}
       </div>
@@ -167,7 +167,7 @@ function bind() {
     }
     if (e.target.matches("[data-file]") && e.target.files[0]) {
       const file = e.target.files[0];
-      if (file.size > 50 * 1024 * 1024) { toast("Files must be under 50 MB.", true); return; }
+      try { checkFile(file); } catch (err) { toast(err.message, true); e.target.value = ""; return; }
       const stateEl = cardEl.querySelector(".qcard__state");
       stateEl.textContent = "Uploading…";
       try {

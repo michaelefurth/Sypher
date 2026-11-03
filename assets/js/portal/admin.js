@@ -1,7 +1,7 @@
 // Admin console for the Managing Principal.
 // Routes (hash): #overview · #inquiries · #inquiry=<id> · #proposals · #proposal=<id>
 //                #clients · #engagement=<id> · #responses=<assignmentId> · #draft=<id> · #questionnaires
-import { store, progressOf } from "./store.js";
+import { store, progressOf, FILE_ACCEPT, checkFile } from "./store.js";
 import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, statusPill, progressBar, download } from "./ui.js";
 import { viewInquiries, viewInquiry, viewProposals, viewProposal, pipelineSubmit, pipelineClick } from "./admin-pipeline.js";
 
@@ -204,7 +204,7 @@ async function viewEngagement(id) {
               <p class="doc__meta">${d.milestone_id && msName.has(d.milestone_id) ? `${esc(msName.get(d.milestone_id))} · ` : ""}${esc(fmtDate(d.created_at, { month: "short", day: "numeric" }))}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}</p></div>
             <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(d.path)}">Open</button>${members.length ? `<button class="p-linkbtn" data-deliverable-share="${esc(d.id)}" data-share="${d.shared_with_team ? "0" : "1"}">${d.shared_with_team ? "Unshare" : "Share with team"}</button>` : ""}<button class="p-linkbtn" data-deliverable-delete="${esc(d.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">Reports, models and documents you share appear in the client's Documents tab, filed by milestone.</p>`}
           <form class="p-form p-form--2" id="deliverable-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
-            <div class="p-field p-span"><label for="dl-file">File (up to 50 MB)</label><input class="p-input" id="dl-file" name="file" type="file" required></div>
+            <div class="p-field p-span"><label for="dl-file">File (PDF, Office, CSV, text or image; up to 50 MB)</label><input class="p-input" id="dl-file" name="file" type="file" accept="${FILE_ACCEPT}" required></div>
             <div class="p-field"><label for="dl-title">Title</label><input class="p-input" id="dl-title" name="title" placeholder="e.g. Cash-flow model, v2"></div>
             <div class="p-field"><label for="dl-ms">Milestone</label><select class="p-select" id="dl-ms" name="milestone_id"><option value="">General</option>${milestones.map((m) => `<option value="${esc(m.id)}"${m.status === "current" ? " selected" : ""}>${esc(m.title)}</option>`).join("")}</select></div>
             <div class="p-field p-span"><label for="dl-note">Note for the client (optional)</label><input class="p-input" id="dl-note" name="note" placeholder="What it is and what to look at first"></div>
@@ -284,6 +284,14 @@ async function viewEngagement(id) {
           </form></section>
         <section class="p-card"><p class="p-kicker">Activity</p>
           ${activity.length ? `<ul class="p-list">${activity.map((a) => `<li><strong>${esc(activityLabel(a))}</strong><p class="p-muted">${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+        </section>
+        <section class="p-card closeout"><p class="p-kicker">Close out</p>
+          <p class="p-muted">When the work is done, mark it complete: the client keeps read access and outside team members lose theirs. To remove the client's data entirely, export it first, then delete.</p>
+          <div class="btn-row" style="gap:.75rem 1.25rem;margin-top:1rem">
+            ${eng.status === "active" ? `<button class="btn btn--ghost btn--sm" data-eng-status="complete">Mark complete</button>` : `<button class="btn btn--ghost btn--sm" data-eng-status="active">Reopen</button>`}
+            <button class="p-linkbtn" data-eng-export>Export everything (JSON)</button>
+            <button class="p-linkbtn p-linkbtn--danger" data-eng-delete>Delete engagement and files</button>
+          </div>
         </section>
       </div>
     </div>`;
@@ -498,7 +506,7 @@ main.addEventListener("submit", async (e) => {
     } else if (form.id === "deliverable-form") {
       const file = form.file.files[0];
       if (!file) throw new Error("Choose a file to share.");
-      if (file.size > 50 * 1024 * 1024) throw new Error("Files must be under 50 MB.");
+      checkFile(file);
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       if (btn) btn.textContent = "Uploading…";
       const row = await store.uploadDeliverable(engId, { title: v("title") || file.name.replace(/\.[^.]+$/, ""), note: v("note") || null, milestone_id: v("milestone_id") || null, shared_with_team: !!form.team?.checked }, file);
@@ -566,6 +574,41 @@ main.addEventListener("click", async (e) => {
     else if (t.dataset.deliverableDelete) {
       const d = (await store.deliverables(location.hash.split("=")[1])).find((x) => x.id === t.dataset.deliverableDelete);
       if (d && await confirmDialog({ title: "Remove this document?", body: `<p><strong>${esc(d.title)}</strong> is deleted and disappears from the client's Documents.</p>`, confirmLabel: "Remove" })) { await store.deleteDeliverable(d); toast("Removed."); route(); }
+    }
+    else if (t.dataset.engStatus) {
+      const engId = location.hash.split("=")[1];
+      await store.updateEngagement(engId, { status: t.dataset.engStatus });
+      toast(t.dataset.engStatus === "complete" ? "Marked complete. Team members' access has ended." : "Reopened.");
+      route();
+    }
+    else if (t.hasAttribute("data-eng-export")) {
+      const engId = location.hash.split("=")[1];
+      const data = await store.exportEngagement(engId);
+      const slug = (data.engagement.title || "engagement").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+      download(`${slug}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), "application/json");
+      toast("Export downloaded. Files are listed by path; download any you need from Deliverables and Documents.");
+    }
+    else if (t.hasAttribute("data-eng-delete")) {
+      const engId = location.hash.split("=")[1];
+      const eng = await store.engagement(engId);
+      const files = await store.engagementObjects(engId);
+      const typed = await new Promise((resolve) => {
+        const dlg = document.createElement("dialog");
+        dlg.className = "p-dialog";
+        dlg.innerHTML = `<form method="dialog" class="p-dialog__box">
+          <h2>Delete this engagement?</h2>
+          <p>This permanently deletes <strong>${esc(eng.title)}</strong>: its questionnaires' answers, messages, tasks, milestones, decisions, updates, AI drafts, team access and <strong>${files.length} stored file${files.length === 1 ? "" : "s"}</strong>. It can't be undone. Export it first if you need a record.</p>
+          <div class="p-field"><label for="del-confirm">Type the engagement title to confirm</label><input class="p-input" id="del-confirm" autocomplete="off"></div>
+          <div class="p-dialog__actions"><button class="btn btn--ghost btn--sm" value="cancel">Cancel</button><button class="btn btn--navy btn--sm" value="ok">Delete permanently</button></div></form>`;
+        document.body.appendChild(dlg);
+        dlg.addEventListener("close", () => { const v = dlg.querySelector("#del-confirm").value.trim(); resolve(dlg.returnValue === "ok" ? v : null); dlg.remove(); });
+        dlg.showModal();
+      });
+      if (typed === null) return;
+      if (typed !== eng.title.trim()) { toast("The title didn't match, so nothing was deleted.", true); return; }
+      const n = await store.deleteEngagement(engId);
+      toast(`Deleted, with ${n} file${n === 1 ? "" : "s"}.`);
+      location.hash = "clients";
     }
     else if (t.dataset.deliverableShare) {
       await store.updateDeliverable(t.dataset.deliverableShare, { shared_with_team: t.dataset.share === "1" });
