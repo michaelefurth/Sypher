@@ -56,7 +56,7 @@ body.portal main { flex: 1; }
 
 /* Progress + pills */
 .p-progress { height: 4px; background: var(--stone); border-radius: 4px; overflow: hidden; margin: 0.9rem 0 0.5rem; }
-.p-progress > span { display: block; height: 100%; background: linear-gradient(90deg, var(--teal), var(--champagne)); border-radius: 4px; transition: width .6s var(--ease); }
+.p-progress > span { display: block; width: 100%; height: 100%; background: linear-gradient(90deg, var(--teal), var(--champagne)); border-radius: 4px; transform: scaleX(0); transform-origin: left center; transition: transform .6s var(--ease); }
 .pill { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--rule-strong); color: var(--slate); white-space: nowrap; font-weight: 500; }
 .pill--teal { border-color: rgba(30, 127, 122, 0.45); color: var(--teal); }
 .pill--gold { border-color: var(--champagne-deep); color: var(--bronze); background: #FBF5EA; }
@@ -326,6 +326,19 @@ h2.p-kicker { font-family: var(--sans); font-weight: 450; line-height: 1.5; colo
 .room-tabs { background: #fff; border-bottom: 1px solid var(--rule); position: sticky; top: var(--p-header-h, 74px); z-index: 30; }
 .room-tabs__inner { display: flex; gap: clamp(1.25rem, 3vw, 2.5rem); padding-top: 0; padding-bottom: 0; overflow-x: auto; scrollbar-width: none; }
 .room-tabs__inner::-webkit-scrollbar { display: none; }
+/* Phones: the tab row fades at its right edge while there is more to scroll to, and the fade
+   lifts at the end (scroll-driven animation; browsers without it show the row as before). */
+@property --tabs-fade { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@supports (animation-timeline: scroll()) {
+  @media (max-width: 760px) {
+    .room-tabs__inner {
+      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
+      mask-image: linear-gradient(to right, #000 calc(100% - var(--tabs-fade)), transparent);
+      animation: room-tabs-fade linear both; animation-timeline: scroll(self inline);
+    }
+    @keyframes room-tabs-fade { from, 85% { --tabs-fade: 3.5rem; } to { --tabs-fade: 0px; } }
+  }
+}
 .room-tabs__link { display: inline-flex; align-items: center; gap: 0.5rem; padding: 1.05rem 0 0.95rem; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 500; }
 .room-tabs__link:hover { color: var(--navy); }
 .room-tabs__link[aria-current="page"] { color: var(--navy); border-bottom-color: var(--champagne); }

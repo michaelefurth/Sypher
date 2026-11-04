@@ -179,7 +179,7 @@ export function statusPill(status) {
 
 export function progressBar(p) {
   const pct = p.total ? Math.round(((p.answered + p.unknown) / p.total) * 100) : 0;
-  return `<div class="p-progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${pct}% complete"><span style="width:${pct}%"></span></div>`;
+  return `<div class="p-progress" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="${pct}% complete"><span style="transform:scaleX(${pct / 100})"></span></div>`;
 }
 
 export function download(filename, text, type = "text/plain") {

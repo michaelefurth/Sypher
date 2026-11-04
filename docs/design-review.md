@@ -77,7 +77,7 @@ One way to keep the brand but cut repetition is to use the kicker only where it 
    - Contact puts the intake on the first screen.
    - Hallmark's `--kept` check: every link (37/37) and script hook (59/59) is intact.
    - The "Let's talk" label above the Contact head was dropped as redundant.
-   - Insights keeps the old opening for now.
+   - Insights got its own opening later, in the same series: the head in a left column and the four essays as a numbered contents list.
 
    Original note: About could lead with Michael's photograph and the principal's note. Services could lead with the eight-practice strip. Solutions could lead with the search box. Work could lead with a case. That fixes the sameness and the empty band below each hero in one move. It is a layout change, so it needs your go-ahead.
 2. ~~**Shorten the home page.**~~ **Done:** the home page now has 9 sections plus the footer, and is about 20% shorter.
@@ -94,9 +94,9 @@ One way to keep the brand but cut repetition is to use the kicker only where it 
 3. **Checked, left as is:** the "small section heads" were step names on Approach and h2s inside Insights articles. Neither is a section head; real section heads already render at about 52px.
 
    Original note: On Approach and in Insights, h2s render at 30 to 37 px under a 76 px hero head, so the page loses its rhythm after the first screen. Raising section heads to about 48 to 52 px at desktop would fix it.
-4. **Progress bars animate `width`.** This affects the intake progress, the portal progress and the puzzle progress. Switching to `transform: scaleX()` is smoother. It needs a two-line change in the scripts that set the width.
-5. **The Services list leaves one item alone on its last row** at 1440. Change the column count or the item count.
-6. **The portal tabs on phones** scroll sideways and cut "Messages" off with no hint there's more. A soft fade at the right edge would show it.
+4. ~~**Progress bars animate `width`.**~~ **Done:** the intake and portal bars now use `scaleX()`. The home puzzle's 2px step marks stay as they are. Original note: This affects the intake progress, the portal progress and the puzzle progress. Switching to `transform: scaleX()` is smoother. It needs a two-line change in the scripts that set the width.
+5. ~~**The Services list leaves one item alone on its last row**~~ **Done:** an odd last item now spans the row. Also fixed: a rule that broke "first-90-day" onto its own line. Original note: at 1440. Change the column count or the item count.
+6. ~~**The portal tabs on phones**~~ **Done:** the row fades at its right edge until you scroll to the end. This works in Chrome, Edge and Safari 26 and later. Original note: scroll sideways and cut "Messages" off with no hint there's more. A soft fade at the right edge would show it.
 7. **On 320 px screens** (the smallest phones), "Email me a sign-in link" wraps to two lines. Tighter letter-spacing at that width would fix it.
 
 ## Linter findings dismissed after checking

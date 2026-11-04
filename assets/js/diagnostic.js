@@ -359,7 +359,7 @@ function render(focus = false) {
   root.innerHTML = `<form class="dx__shell" novalidate>
     <div class="dx__head">
       <p class="dx__step"><span>${esc(pr.label)}</span><span class="dx__eta">${esc(pr.left)}</span></p>
-      <div class="dx__bar" aria-hidden="true"><span style="width:${pr.pct}%"></span></div>
+      <div class="dx__bar" aria-hidden="true"><span style="transform:scaleX(${Math.max(pr.pct, 4) / 100})"></span></div>
     </div>
     ${state.profile ? `<details class="dx__peek"${peekOpen ? " open" : ""}><summary>Your notes so far</summary><div class="dx__peek-body" data-peek></div></details>` : ""}
     <div class="dx__screen${reduced() ? "" : " is-entering"}" data-screen="${esc(s.id)}">${screenBody(s)}</div>

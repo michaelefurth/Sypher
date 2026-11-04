@@ -262,7 +262,7 @@ function whereThingsStand() {
   const now = ms.find((m) => m.status === "current");
   return `<section class="p-card p-card--accent room-stand"><h2 class="p-kicker">Where things stand</h2>
     <div class="room-stand__row"><p class="room-stand__big"><b>${done}</b> of ${ms.length}</p><p class="p-muted">milestones complete</p></div>
-    <div class="p-progress" role="progressbar" aria-valuenow="${Math.round((done / ms.length) * 100)}" aria-valuemin="0" aria-valuemax="100" aria-label="Milestones complete"><span style="width:${(done / ms.length) * 100}%"></span></div>
+    <div class="p-progress" role="progressbar" aria-valuenow="${Math.round((done / ms.length) * 100)}" aria-valuemin="0" aria-valuemax="100" aria-label="Milestones complete"><span style="transform:scaleX(${done / ms.length})"></span></div>
     ${now ? `<p class="room-stand__now"><span class="room-track__now">In progress</span> ${esc(now.title)}</p>` : ""}
     <a class="p-linkbtn" href="#plan">See the plan</a>
   </section>`;
