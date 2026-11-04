@@ -2,7 +2,9 @@
 // Routes (hash): #overview · #inquiries · #inquiry=<id> · #proposals · #proposal=<id>
 //                #clients · #engagement=<id> · #responses=<assignmentId> · #draft=<id> · #questionnaires
 import { store, progressOf, FILE_ACCEPT, checkFile } from "./store.js";
-import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, statusPill, progressBar, download } from "./ui.js";
+import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, promptDialog, statusPill, progressBar, download } from "./ui.js";
+import { SOV_TEMPLATES, sovTotals, sheetPill, money } from "./sov.js";
+import { mountBell } from "./bell.js";
 import { viewInquiries, viewInquiry, viewProposals, viewProposal, pipelineSubmit, pipelineClick } from "./admin-pipeline.js";
 
 const main = document.getElementById("main");
@@ -27,6 +29,8 @@ const activityLabel = (a) => {
 };
 const fmtSize = (n) => (!n ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 const MS_STATUS = [["upcoming", "Upcoming"], ["current", "In progress"], ["done", "Done"]];
+const KIND = { task: "To-do", document: "Document", answer: "Question", approval: "Approval", pricing: "Pricing" };
+const REQ_STATUS = { open: ["Open", "pill--teal"], submitted: ["To review", "pill--gold"], changes_requested: ["Changes requested", "pill--red"], accepted: ["Done", "pill--navy"] };
 
 function shell(active, counts, body) {
   const link = (hash, label, count) => `<a href="#${hash}" class="${active === hash ? "is-active" : ""}">${label}${count ? `<span class="count">${count}</span>` : ""}</a>`;
@@ -128,6 +132,9 @@ async function viewEngagement(id) {
     store.milestones(id), store.decisions(id), store.messages(id), store.actionItems(id), store.deliverables(id),
     store.roster(id).catch(() => null), store.messages(id, "team"), store.teamFiles(id).catch(() => []),
   ]);
+  const [requestFiles, sheets, budgetRows] = await Promise.all([store.requestFiles(id).catch(() => []), store.sovSheets(id).catch(() => []), store.sovBudget(id).catch(() => [])]);
+  const sheetLines = await Promise.all(sheets.map((x) => store.sovLines(x.id).catch(() => [])));
+  const budget = budgetRows.length ? new Map(budgetRows.map((b) => [b.line_id, b])) : null;
   window.__team = { roster, teamFiles };
   const members = roster?.members || [];
   const activeMembers = members.filter((m) => m.status === "active");
@@ -184,18 +191,48 @@ async function viewEngagement(id) {
             <div class="doc__body"><p class="doc__title">${esc(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}<p class="doc__meta">${esc(who(f.uploaded_by))} · ${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
             <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(f.path)}">Open</button><button class="p-linkbtn" data-team-file-delete="${esc(f.id)}">Remove</button></div></li>`).join("")}</ul>` : ""}
         </section>
-        <section class="p-card"><p class="p-kicker">Tasks</p>
-          ${actions.length ? `<ul class="todo-list admin-todo">${actions.map((a) => `<li class="todo${a.done_at ? " is-done" : ""}">
-            <div class="todo__text"><span class="todo__title">${esc(a.title)}</span><span class="todo__detail">${esc(assignee(a))}${a.detail ? ` · ${esc(a.detail)}` : ""}</span></div>
-            <div class="btn-row" style="gap:.5rem 1rem;flex:none">${a.done_at ? `<span class="pill pill--teal pill--dot">Done ${esc(relTime(a.done_at))}</span>` : a.due_date ? `<span class="p-muted">Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}</span>` : ""}
-            <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">Small, concrete asks: send statements, book a site visit, confirm a number. Give them to the client or anyone on the team; they tick them off in the portal.</p>`}
+        <section class="p-card" id="requests"><div class="p-row"><p class="p-kicker">Requests</p><span class="p-muted">${actions.filter((a) => a.status === "submitted").length ? `${actions.filter((a) => a.status === "submitted").length} to review` : ""}</span></div>
+          ${actions.length ? `<ul class="req-list req-list--admin">${actions.map((a) => {
+            const files = requestFiles.filter((f) => f.request_id === a.id);
+            const [sl, sc] = REQ_STATUS[a.status] || [a.status, ""];
+            return `<li class="req req--${esc(a.kind)} is-${esc(a.status)}">
+              <div class="req__head"><span class="req__kind">${esc(KIND[a.kind] || a.kind)}</span><h3 class="req__title">${esc(a.title)}</h3><span class="pill pill--dot ${sc}">${esc(sl)}</span></div>
+              <p class="req__meta"><span>${esc(a.created_by ? who(a.created_by) : "You")} → ${esc(assignee(a))}</span>${a.due_date && a.status !== "accepted" ? `<span>Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}</span>` : ""}${a.submitted_at ? `<span>Answered ${esc(relTime(a.submitted_at))}</span>` : ""}</p>
+              ${a.detail ? `<p class="req__detail">${esc(a.detail)}</p>` : ""}
+              ${a.response ? `<div class="req__answer"><b>${esc(a.submitted_by ? who(a.submitted_by) : "Answer")}</b>${paragraphs(a.response)}</div>` : ""}
+              ${a.review_note ? `<p class="req__meta">Review note: ${esc(a.review_note)}</p>` : ""}
+              ${files.length ? `<ul class="req__files">${files.map((f) => `<li><button type="button" class="req__file" data-open-file="${esc(f.path)}"><span aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>${esc(f.name)} <small>${esc(who(f.uploaded_by))}</small></button></li>`).join("")}</ul>` : ""}
+              <div class="req__actions">
+                ${a.status === "submitted" && a.kind !== "pricing" ? `<button class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button><button class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>` : ""}
+                ${a.kind === "pricing" && a.link_ref ? `<a class="p-linkbtn" href="pricing.html?s=${esc(a.link_ref)}">Open the sheet</a>` : ""}
+                ${a.status !== "accepted" && a.kind !== "pricing" ? `<button class="p-linkbtn" data-req-answer="${esc(a.id)}">Answer for them</button>` : ""}
+                <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`;
+          }).join("")}</ul>` : `<p class="p-muted">Ask the client or anyone on the team for a document, an answer, an approval or a to-do. They answer in the portal with a note and files, and you accept it or send it back. Anyone on the engagement can ask you, too.</p>`}
           <form class="p-form p-form--2" id="action-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
+            <div class="p-field"><label for="ac-kind">Kind</label><select class="p-select" id="ac-kind" name="kind"><option value="document">Document or file</option><option value="answer">Answer to a question</option><option value="approval">Approval</option><option value="task">To-do</option></select></div>
+            <div class="p-field"><label for="ac-who">From</label><select class="p-select" id="ac-who" name="assignee_id"><option value="">${esc(eng.client?.full_name || "The client")} (client)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
             <div class="p-field p-span"><label for="ac-title">What's needed</label><input class="p-input" id="ac-title" name="title" required placeholder="e.g. Send the last 12 months of bank statements"></div>
             <div class="p-field"><label for="ac-detail">Detail (optional)</label><input class="p-input" id="ac-detail" name="detail"></div>
             <div class="p-field"><label for="ac-due">Due</label><input class="p-input" id="ac-due" name="due_date" type="date"></div>
-            <div class="p-field p-span"><label for="ac-who">For</label><select class="p-select" id="ac-who" name="assignee_id"><option value="">${esc(eng.client?.full_name || "The client")} (client)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
-            <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email them</label><button class="btn btn--ghost btn--sm" type="submit">Add task</button></div>
+            <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email them</label><button class="btn btn--ghost btn--sm" type="submit">Send request</button></div>
           </form>
+        </section>
+        <section class="p-card p-card--accent" id="pricing"><p class="p-kicker">Pricing (schedule of values)</p>
+          ${sheets.length ? `<ul class="price-list">${sheets.map((x, i) => {
+            const t = sovTotals(x, sheetLines[i], budget);
+            return `<li><div class="p-row"><a class="price-list__title" href="pricing.html?s=${esc(x.id)}">${esc(x.title)}</a>${sheetPill(x.status)}</div>
+              <p class="p-muted">${x.contractor_id ? esc(who(x.contractor_id)) : "No contractor"} · ${t.answered} of ${t.count} lines · ${money(t.total)}${t.budget ? ` · budget ${money(t.budget.base)}${t.budget.pricedBudget ? ` (priced lines <span class="${t.budget.variance > 0 ? "is-over" : "is-under"}">${t.budget.variance > 0 ? "+" : "−"}${money(Math.abs(t.budget.variance))}</span>)` : ""}` : ""}${x.version ? ` · v${x.version}` : ""}</p>
+              <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--ghost btn--sm" href="pricing.html?s=${esc(x.id)}">Open the sheet</a><button class="p-linkbtn p-linkbtn--danger" data-sheet-delete="${esc(x.id)}">Delete</button></div></li>`;
+          }).join("")}</ul>` : `<p class="p-muted">A schedule of values the contractor prices line by line, with autosave. You and the client see each line beside the budget; the contractor never sees the budget.</p>`}
+          <details class="room-add"${sheets.length ? "" : " open"}><summary class="p-linkbtn">New pricing sheet</summary>
+            <form class="p-form p-form--2" id="sheet-form">
+              <div class="p-field p-span"><label for="sh-title">Title</label><input class="p-input" id="sh-title" name="title" required placeholder="e.g. Building and site: contractor pricing"></div>
+              <div class="p-field"><label for="sh-who">Contractor</label><select class="p-select" id="sh-who" name="contractor_id"><option value="">None yet (I'll key it in)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
+              <div class="p-field"><label for="sh-due">Due</label><input class="p-input" id="sh-due" name="due_date" type="date"></div>
+              <div class="p-field p-span"><label for="sh-tpl">Start from</label><select class="p-select" id="sh-tpl" name="template">${Object.entries(SOV_TEMPLATES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select></div>
+              <div class="p-field p-span"><label for="sh-intro">What you need (shown at the top of the sheet)</label><textarea class="p-textarea" id="sh-intro" name="intro" rows="3" placeholder="The drawings and revision to price from, what to include, when you need it"></textarea></div>
+              <div class="p-span p-row"><span class="p-muted">Add the contractor to the team first (Team, above). They're asked and emailed when the sheet is created.</span><button class="btn btn--navy btn--sm" type="submit">Create the sheet</button></div>
+            </form></details>
         </section>
         <section class="p-card"><p class="p-kicker">Deliverables</p>
           ${deliverables.length ? `<ul class="doc-list">${deliverables.map((d) => `<li class="doc">
@@ -499,10 +536,24 @@ main.addEventListener("submit", async (e) => {
     } else if (form.id === "action-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const existing = await store.actionItems(engId);
-      const row = await store.addActionItem({ engagement_id: engId, title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: existing.length + 1 });
+      const row = await store.addActionItem({ engagement_id: engId, kind: v("kind"), title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: existing.length + 1 });
       if (form.notify.checked) store.notify("action_item", row.id);
-      toast(form.notify.checked ? "Added. They've been emailed." : "Task added.");
+      toast(form.notify.checked ? "Sent. They've been emailed." : "Request added.");
       route();
+    } else if (form.id === "sheet-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const contractor = v("contractor_id") || null;
+      const sheet = await store.sovCreateSheet({ engagement_id: engId, title: v("title"), intro: v("intro") || null, contractor_id: contractor });
+      const tpl = SOV_TEMPLATES[v("template")] || SOV_TEMPLATES.blank;
+      if (tpl.lines.length) {
+        await store.sovInsertLines(tpl.lines.map(([section, code, description, hint], i) => ({ sheet_id: sheet.id, engagement_id: engId, position: i + 1, section, code: code || null, description, hint: hint || null })));
+      }
+      if (contractor) {
+        const req = await store.addActionItem({ engagement_id: engId, kind: "pricing", link_ref: sheet.id, assignee_id: contractor, title: `Price the schedule of values: ${sheet.title}`, due_date: v("due_date") || null, position: 0 });
+        store.notify("action_item", req.id);
+      }
+      toast(contractor ? "Sheet created. The contractor has been asked and emailed." : "Sheet created.");
+      location.href = `pricing.html?s=${sheet.id}`;
     } else if (form.id === "deliverable-form") {
       const file = form.file.files[0];
       if (!file) throw new Error("Choose a file to share.");
@@ -568,6 +619,30 @@ main.addEventListener("click", async (e) => {
   try {
     if (await pipelineClick(t, route)) return;
     if (t.dataset.msDelete) { await store.deleteMilestone(t.dataset.msDelete); route(); }
+    else if (t.dataset.reqReview) {
+      const accept = t.dataset.reqReview === "accept";
+      const note = accept ? null : await promptDialog({ title: "Ask for changes", label: "What needs to change", required: true, confirmLabel: "Send back" });
+      if (!accept && !note) return;
+      await store.reviewRequest(t.dataset.req, accept, note);
+      store.notify("request_update", t.dataset.req);
+      toast(accept ? "Accepted. They've been told." : "Sent back with your note.");
+      route();
+    }
+    else if (t.dataset.reqAnswer) {
+      const note = await promptDialog({ title: "Answer for them", body: "<p class=\"p-muted\">Record an answer you received another way (by email or on a call). It's marked as answered by you.</p>", label: "Answer", required: true, confirmLabel: "Save answer" });
+      if (!note) return;
+      await store.submitRequest(t.dataset.reqAnswer, note);
+      toast("Answer recorded.");
+      route();
+    }
+    else if (t.dataset.sheetDelete) {
+      if (await confirmDialog({ title: "Delete this pricing sheet?", body: "<p>Every line, the budget and the submitted versions are deleted. It can't be undone.</p>", confirmLabel: "Delete" })) {
+        await store.sovDeleteSheet(t.dataset.sheetDelete);
+        const hash = location.hash.slice(1); const engId = hash.split("=")[1];
+        for (const a of (await store.actionItems(engId)).filter((x) => x.kind === "pricing" && x.link_ref === t.dataset.sheetDelete)) await store.deleteActionItem(a.id);
+        toast("Deleted."); route();
+      }
+    }
     else if (t.dataset.actionDelete) {
       if (await confirmDialog({ title: "Remove this item?", body: "<p>It disappears from the client's list.</p>", confirmLabel: "Remove" })) { await store.deleteActionItem(t.dataset.actionDelete); route(); }
     }
@@ -690,4 +765,10 @@ main.addEventListener("change", async (e) => {
   renderChrome(session, { active: "admin", admin: true });
   window.addEventListener("hashchange", route);
   route();
+  // Alerts across every engagement; choosing one opens that engagement.
+  mountBell({
+    me: session.user.id,
+    open: (n) => { if (n.engagement_id) { const h = `engagement=${n.engagement_id}`; if (location.hash.slice(1) === h) route(); else location.hash = h; } },
+    onChange: (row) => { if (row && location.hash.slice(1) === `engagement=${row.engagement_id}` && !main.contains(document.activeElement)) route(); },
+  }).catch((err) => console.warn("Alerts unavailable:", err.message));
 })();

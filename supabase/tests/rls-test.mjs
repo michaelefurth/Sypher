@@ -10,7 +10,7 @@ import { readFileSync, readdirSync } from "node:fs";
 const db = new PGlite({ extensions: { pgcrypto } });
 const results = [];
 const ok = (name, cond, extra = "") => results.push(`${cond ? "PASS" : "FAIL"} ${name}${extra ? " — " + extra : ""}`);
-const rows = async (s) => (await db.query(s)).rows;
+const rows = async (s) => (await db.query(s).catch((e) => { e.message += ` [in: ${s.slice(0, 140)}]`; throw e; })).rows;
 
 // --- Minimal stand-ins for Supabase's auth + storage schemas and roles ---
 await db.exec(`
@@ -68,7 +68,7 @@ async function as(user, fn, aal = user === ADMIN ? "aal2" : "aal1") {
     select set_config('request.jwt.claims', '${JSON.stringify({ sub: user, aal })}', false);`);
   try { return await fn(); } finally { await db.exec(`reset role;`); }
 }
-const q = (s, p) => db.query(s, p);
+const q = (s, p) => db.query(s, p).catch((e) => { e.message += ` [in: ${s.slice(0, 120)}]`; throw e; });
 const fails = async (s) => { try { await q(s); return false; } catch { return true; } };
 
 ok("profiles auto-created by trigger", (await q(`select count(*)::int n from public.profiles`)).rows[0].n === 3);
@@ -397,7 +397,7 @@ ok("signed-out visitors cannot call the access helpers",
   ["is_admin", "owns_engagement", "owns_assignment", "questionnaire_assigned_to_me", "assignment_is_open", "submit_assignment"].every((n) => fn(n).anon === false));
 ok("signed-in users keep the helpers their access rules need", ["is_admin", "owns_engagement", "owns_assignment"].every((n) => fn(n).auth === true));
 ok("trigger functions cannot be called directly by anyone",
-  ["handle_new_user", "protect_profile_fields", "touch_answer", "touch_proposal", "log_room_event"].every((n) => fn(n).anon === false && fn(n).auth === false));
+  ["handle_new_user", "protect_profile_fields", "touch_answer", "touch_proposal", "log_room_event", "notify_room_event", "notify", "audience"].every((n) => fn(n).anon === false && fn(n).auth === false));
 ok("proposal links still work for signed-out readers", fn("get_proposal").anon === true && fn("respond_proposal").anon === true);
 ok("every function has a fixed search_path", priv.every((r) => /search_path/.test(r.cfg)), priv.filter((r) => !/search_path/.test(r.cfg)).map((r) => r.proname).join(","));
 await db.exec(`insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000d1', 'new@client.example')`);
@@ -405,6 +405,141 @@ ok("new sign-ups still get a profile with the trigger locked down", (await rows(
 await as(A, async () => {
   await q(`insert into public.messages (engagement_id, author_id, body) values ('${ENG_A}', '${A}', 'after hardening')`);
   ok("timeline triggers still fire for clients", (await q(`select * from public.messages where body = 'after hardening'`)).rows.length === 1);
+});
+
+// --- Requests, notifications and the schedule of values (20261106000000_action_center) ---
+const CT = "00000000-0000-0000-0000-0000000000c4";
+await db.exec(`
+  insert into auth.users (id, email) values ('${CT}', 'est@ctbuild.example');
+  insert into public.engagement_members (id, engagement_id, user_id, email, full_name, role_label, can_message, can_files, status) values
+   ('90000000-0000-0000-0000-000000000004', '${ENG_A}', '${CT}', 'est@ctbuild.example', 'Casey Estimator', 'Contractor', true, true, 'active');
+  -- Known memberships for this section (earlier tests revoke the CPA and change the attorney's access).
+  update public.engagement_members set status = 'active', can_message = true, can_files = true, expires_at = null where id = '90000000-0000-0000-0000-000000000001';
+  update public.engagement_members set status = 'active', can_message = false, can_files = true, expires_at = null where id = '90000000-0000-0000-0000-000000000002';
+  update public.engagements set status = 'active' where id = '${ENG_A}';
+`);
+let REQ;
+await as(A, async () => {
+  REQ = (await rows(`insert into public.action_items (engagement_id, title, kind, assignee_id, created_by) values ('${ENG_A}', 'Send the title commitment', 'document', '${LAW}', '${A}') returning id`))[0].id;
+  ok("client can ask a team member for a document", !!REQ);
+  ok("client can ask Michael directly", !(await fails(`insert into public.action_items (engagement_id, title, kind, assignee_id, created_by) values ('${ENG_A}', 'Confirm the survey scope', 'answer', '${ADMIN}', '${A}')`)));
+  ok("client cannot create a pricing request", await fails(`insert into public.action_items (engagement_id, title, kind, created_by) values ('${ENG_A}', 'Price it', 'pricing', '${A}')`));
+  ok("client cannot ask someone outside the engagement", await fails(`insert into public.action_items (engagement_id, title, kind, assignee_id, created_by) values ('${ENG_A}', 'x', 'document', '${B}', '${A}')`));
+});
+ok("the person asked is notified", (await rows(`select * from public.notifications where user_id = '${LAW}' and title = 'New request: Send the title commitment'`)).length === 1);
+await as(CPA, async () => {
+  ok("other members don't see a request between two people", !(await rows(`select id from public.action_items`)).some((r) => r.id === REQ));
+  ok("a member can't answer someone else's request", await fails(`select public.submit_request('${REQ}', 'here')`));
+  ok("a member can't send files into someone else's request", await fails(`insert into storage.objects (bucket_id, name) values ('portal', '${ENG_A}/requests/${REQ}/sneaky.pdf')`));
+});
+await as(LAW, async () => {
+  ok("the person asked sees the request", (await rows(`select id from public.action_items where id = '${REQ}'`)).length === 1);
+  ok("they can upload a file into the request", !(await fails(`insert into storage.objects (bucket_id, name) values ('portal', '${ENG_A}/requests/${REQ}/commitment.pdf')`)));
+  ok("…and record it on the request", !(await fails(`insert into public.request_files (request_id, engagement_id, path, name) values ('${REQ}', '${ENG_A}', '${ENG_A}/requests/${REQ}/commitment.pdf', 'commitment.pdf')`)));
+  ok("a request file must sit in the request's own folder", await fails(`insert into public.request_files (request_id, engagement_id, path, name) values ('${REQ}', '${ENG_A}', '${ENG_A}/team/x.pdf', 'x.pdf')`));
+  await q(`select public.submit_request('${REQ}', 'Attached, with all exceptions')`);
+  ok("answering a request marks it submitted", (await rows(`select status from public.action_items where id = '${REQ}'`))[0].status === "submitted");
+  ok("the person asked can't accept their own answer", await fails(`select public.review_request('${REQ}', true, null)`));
+});
+ok("whoever asked is told it was answered", (await rows(`select * from public.notifications where user_id = '${A}' and kind = 'request_submitted'`)).length === 1);
+await as(CPA, async () => {
+  ok("other members can't open the request's files", (await rows(`select * from public.request_files`)).length === 0
+    && !(await rows(`select name from storage.objects`)).some((r) => r.name.includes("/requests/")));
+});
+await as(B, async () => {
+  ok("another client can't see the request or its files", (await rows(`select * from public.request_files`)).length === 0 && (await rows(`select * from public.action_items where id = '${REQ}'`)).length === 0);
+});
+await as(A, async () => {
+  ok("the client sees the request's file", (await rows(`select * from public.request_files where request_id = '${REQ}'`)).length === 1);
+  ok("sending a request back needs a note", await fails(`select public.review_request('${REQ}', false, '')`));
+  await q(`select public.review_request('${REQ}', false, 'Please include the Schedule B exceptions')`);
+  ok("changes can be requested", (await rows(`select status from public.action_items where id = '${REQ}'`))[0].status === "changes_requested");
+});
+await as(LAW, async () => { await q(`select public.submit_request('${REQ}', 'Now with Schedule B')`); });
+await as(A, async () => {
+  await q(`select public.review_request('${REQ}', true, null)`);
+  const r = (await rows(`select status, done_at from public.action_items where id = '${REQ}'`))[0];
+  ok("accepting completes the request", r.status === "accepted" && r.done_at !== null);
+  const parties = (await rows(`select public.request_parties('${ENG_A}') p`))[0].p;
+  ok("the client can list everyone a request can go to", parties.some((x) => x.role === "Sypher Solutions") && parties.some((x) => x.name === "Lee Law"));
+});
+ok("the person asked hears it was accepted", (await rows(`select * from public.notifications where user_id = '${LAW}' and kind = 'request_accepted'`)).length === 1);
+await as(CPA, async () => {
+  ok("a member can ask the client for something", !(await fails(`insert into public.action_items (engagement_id, title, kind, created_by) values ('${ENG_A}', 'Sign the engagement letter', 'approval', '${CPA}')`)));
+  const parties = (await rows(`select public.request_parties('${ENG_A}') p`))[0].p;
+  ok("members see names and roles, never emails", !JSON.stringify(parties).includes("@"));
+});
+
+// Notifications go only to people who may see the thing.
+await as(A, async () => { await q(`insert into public.messages (engagement_id, author_id, body) values ('${ENG_A}', '${A}', 'Private note to Michael')`); });
+ok("a private message notifies Michael", (await rows(`select * from public.notifications where user_id = '${ADMIN}' and body = 'Private note to Michael'`)).length === 1);
+ok("…and no team member", (await rows(`select * from public.notifications where body = 'Private note to Michael' and user_id in ('${CPA}', '${LAW}', '${CT}')`)).length === 0);
+ok("the author isn't notified of their own message", (await rows(`select * from public.notifications where user_id = '${A}' and body = 'Private note to Michael'`)).length === 0);
+await as(CPA, async () => { await q(`insert into public.messages (engagement_id, author_id, body, thread) values ('${ENG_A}', '${CPA}', 'Team update', 'team')`); });
+ok("a team message reaches members who can message", (await rows(`select * from public.notifications where body = 'Team update' and user_id = '${CT}'`)).length === 1);
+ok("…but not members without messaging", (await rows(`select * from public.notifications where body = 'Team update' and user_id = '${LAW}'`)).length === 0);
+await as(LAW, async () => {
+  const mine = await rows(`select user_id from public.notifications`);
+  ok("people read only their own notifications", mine.length > 0 && mine.every((r) => r.user_id === LAW));
+  ok("notifications can't be written directly", await fails(`insert into public.notifications (user_id, kind, title) values ('${A}', 'x', 'spoof')`));
+  const n = (await rows(`select public.mark_notifications_read() n`))[0].n;
+  ok("marking notifications read", n > 0 && (await rows(`select * from public.notifications where read_at is null`)).length === 0);
+});
+
+// Schedule of values.
+const SHEET = "a0000000-0000-0000-0000-000000000001", L1 = "a1000000-0000-0000-0000-000000000001", L2 = "a1000000-0000-0000-0000-000000000002", L3 = "a1000000-0000-0000-0000-000000000003";
+await as(ADMIN, async () => {
+  await q(`insert into public.sov_sheets (id, engagement_id, title, contractor_id) values ('${SHEET}', '${ENG_A}', 'Phase 1 restaurant', '${CT}')`);
+  await q(`insert into public.sov_lines (id, sheet_id, engagement_id, position, code, description) values
+    ('${L1}', '${SHEET}', '${ENG_A}', 1, '03', 'Concrete'), ('${L2}', '${SHEET}', '${ENG_A}', 2, '09', 'Finishes'), ('${L3}', '${SHEET}', '${ENG_A}', 3, '11', 'Kitchen equipment')`);
+  await q(`insert into public.sov_budget (line_id, engagement_id, low, base, high) values ('${L1}', '${ENG_A}', 200000, 236228, 260000)`);
+  await q(`insert into public.action_items (engagement_id, title, kind, assignee_id, link_ref) values ('${ENG_A}', 'Price the schedule of values', 'pricing', '${CT}', '${SHEET}')`);
+});
+await as(CT, async () => {
+  ok("the contractor sees their pricing sheet", (await rows(`select * from public.sov_sheets`)).length === 1 && (await rows(`select * from public.sov_lines`)).length === 3);
+  ok("the contractor never sees the budget", (await rows(`select * from public.sov_budget`)).length === 0);
+  ok("the contractor can't edit lines directly", (await rows(`update public.sov_lines set amount = 1 where id = '${L1}' returning id`)).length === 0);
+  const saved = (await rows(`select (public.sov_save_line('${L1}', '{"amount": "240000"}'::jsonb)).amount a`))[0].a;
+  ok("autosave stores a price", Number(saved) === 240000);
+  const calc = (await rows(`select (public.sov_save_line('${L2}', '{"quantity": "6500", "unit": "SF", "unit_cost": "62.5"}'::jsonb)).amount a`))[0].a;
+  ok("quantity times unit cost sets the amount", Number(calc) === 406250);
+  ok("the contractor can't rename a line", await fails(`select public.sov_save_line('${L1}', '{"description": "Cheaper concrete"}'::jsonb)`));
+  ok("submitting with an unpriced line is refused", await fails(`select public.sov_submit('${SHEET}')`));
+  await q(`select public.sov_save_line('${L3}', '{"line_status": "excluded", "note": "Owner-furnished per contract"}'::jsonb)`);
+  ok("submitting without a validity date is refused", await fails(`select public.sov_submit('${SHEET}')`));
+  await q(`select public.sov_update_sheet('${SHEET}', '{"valid_until": "2027-01-31", "ohp_pct": "6", "building_sf": "6500"}'::jsonb)`);
+  const sub = (await rows(`select public.sov_submit('${SHEET}') r`))[0].r;
+  ok("submit totals the sheet with overhead and profit", Number(sub.subtotal) === 646250 && Number(sub.total) === 685025);
+  ok("a submitted sheet is locked", await fails(`select public.sov_save_line('${L1}', '{"amount": "1"}'::jsonb)`));
+});
+ok("starting to price notifies the client", (await rows(`select * from public.notifications where user_id = '${A}' and kind = 'pricing' and title like '%started pricing%'`)).length === 1);
+ok("submitting notifies the client and Michael", (await rows(`select * from public.notifications where kind = 'pricing' and title like 'Pricing submitted%' and user_id in ('${A}', '${ADMIN}')`)).length === 2);
+ok("submitting answers the pricing request", (await rows(`select status from public.action_items where kind = 'pricing'`))[0].status === "submitted");
+ok("each submission is kept as a version", (await rows(`select * from public.sov_versions where sheet_id = '${SHEET}'`)).length === 1);
+await as(LAW, async () => {
+  ok("other team members don't see pricing", (await rows(`select * from public.sov_sheets`)).length === 0 && (await rows(`select * from public.sov_lines`)).length === 0);
+  ok("other team members can't price", await fails(`select public.sov_save_line('${L1}', '{"amount": "1"}'::jsonb)`));
+});
+await as(B, async () => { ok("another client can't see the pricing", (await rows(`select * from public.sov_sheets`)).length === 0); });
+await as(A, async () => {
+  ok("the client sees the budget beside the price", (await rows(`select * from public.sov_budget`)).length === 1);
+  ok("the client can't price lines", await fails(`select public.sov_save_line('${L1}', '{"amount": "1"}'::jsonb)`));
+  await q(`select public.sov_line_review('${L2}', 'Does this include the patio?')`);
+  await q(`select public.sov_review('${SHEET}', false, 'Break finishes out by room')`);
+  ok("the client can send pricing back", (await rows(`select status from public.sov_sheets`))[0].status === "changes_requested");
+});
+await as(CT, async () => {
+  ok("the contractor sees the question on the line", (await rows(`select review_note from public.sov_lines where id = '${L2}'`))[0].review_note === "Does this include the patio?");
+  ok("sent-back pricing can be edited again", !(await fails(`select public.sov_save_line('${L2}', '{"note": "Patio included"}'::jsonb)`)));
+  await q(`select public.sov_submit('${SHEET}')`);
+});
+await as(A, async () => { await q(`select public.sov_review('${SHEET}', true, null)`); });
+ok("accepting the pricing completes the request", (await rows(`select status from public.action_items where kind = 'pricing'`))[0].status === "accepted"
+  && (await rows(`select * from public.sov_versions where sheet_id = '${SHEET}'`)).length === 2);
+ok("the contractor hears it was accepted", (await rows(`select * from public.notifications where user_id = '${CT}' and title like 'Pricing accepted%'`)).length === 1);
+await asAnon(async () => {
+  ok("signed-out visitors can't reach pricing or requests", await fails(`select public.sov_save_line('${L1}', '{"amount": "1"}'::jsonb)`)
+    && await fails(`select public.submit_request('${REQ}', 'x')`) && await fails(`select public.mark_notifications_read()`));
 });
 
 console.log(results.join("\n"));

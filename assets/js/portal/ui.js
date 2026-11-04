@@ -71,6 +71,29 @@ export function confirmDialog({ title, body, confirmLabel = "Confirm", cancelLab
   });
 }
 
+/** Ask for a line of text in a <dialog>. Resolves the trimmed text, or null when cancelled. */
+export function promptDialog({ title, body = "", label = "Note", value = "", placeholder = "", confirmLabel = "Save", required = false, multiline = true }) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement("dialog");
+    dlg.className = "p-dialog";
+    const field = multiline
+      ? `<textarea class="p-textarea" id="pd-text" rows="4" maxlength="1000" placeholder="${esc(placeholder)}"${required ? " required" : ""}>${esc(value)}</textarea>`
+      : `<input class="p-input" id="pd-text" maxlength="300" value="${esc(value)}" placeholder="${esc(placeholder)}"${required ? " required" : ""}>`;
+    dlg.innerHTML = `<form method="dialog" class="p-dialog__box">
+      <h2>${esc(title)}</h2>${body ? `<div>${body}</div>` : ""}
+      <div class="p-field" style="margin-top:1rem"><label for="pd-text">${esc(label)}</label>${field}</div>
+      <div class="p-dialog__actions">
+        <button class="btn btn--ghost btn--sm" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn btn--navy btn--sm" value="ok">${esc(confirmLabel)}</button>
+      </div></form>`;
+    document.body.appendChild(dlg);
+    const input = dlg.querySelector("#pd-text");
+    dlg.addEventListener("close", () => { resolve(dlg.returnValue === "ok" ? input.value.trim() : null); dlg.remove(); });
+    dlg.showModal();
+    input.focus();
+  });
+}
+
 const ICON = `<img class="wordmark__icon" src="../assets/img/sypher-mark-sm.webp" alt="" width="46" height="48">`;
 
 export function renderChrome(session, { active = "", admin = false } = {}) {

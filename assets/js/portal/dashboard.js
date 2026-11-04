@@ -1,42 +1,52 @@
 // The room, as each person sees it.
 //
-// The client (six tabs):
-//   Overview   what needs them (to-dos, questionnaires), the next conversation, the latest update
-//   Plan       the milestone track (with the documents each produced) and the decision log
+// The client:
+//   Home       front and center: what needs them, what they're waiting on (by person), what's
+//              new since they last looked, where things stand, and the recent activity
+//   Requests   everything asked of anyone on the engagement: documents, answers, approvals,
+//              to-dos; answer with a note and files, accept or send back
+//   Pricing    the contractor's schedule of values beside the budget (once a sheet exists)
 //   Documents  the signed agreement, deliverables from Michael, and files they've shared
 //   Messages   a private thread with Michael
+//   Plan       the milestone track (with the documents each produced) and the decision log
 //   Team       outside advisers they've brought in: people, team thread, team tasks, team files
-//   Timeline   everything that has happened, newest first
 //
-// A team member (attorney, CPA …), with access the client or Michael granted, sees only:
-//   Tasks      tasks assigned to them (and the rest of the team's, for context)
-//   Messages   the team thread                    (if they may message)
-//   Files      team files and shared deliverables (if they may see files)
+// A team member (attorney, CPA, contractor …), with access the client or Michael granted, sees:
+//   Home, Requests (what they asked or were asked), Pricing (a contractor with a sheet),
+//   Messages (the team thread, if they may message) and Files (if they may see files).
 //
-// Tabs are hash routes, so the back button and email links work.
+// The bell in the header lists alerts as they happen (Supabase Realtime); tabs are hash
+// routes, so the back button and email links work.
 import { store, FILE_ACCEPT, checkFile } from "./store.js";
 import { ADMIN_CONTACT } from "./config.js";
-import { esc, paragraphs, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, download, confirmDialog } from "./ui.js";
+import { esc, paragraphs, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, download, confirmDialog, promptDialog } from "./ui.js";
+import { mountSov, sovTotals, sheetPill, money, SHEET_STATUS } from "./sov.js";
+import { mountBell } from "./bell.js";
 
 const main = document.getElementById("main");
-const CLIENT_TABS = [["overview", "Overview"], ["plan", "Plan"], ["documents", "Documents"], ["messages", "Messages"], ["team", "Team"], ["timeline", "Timeline"]];
-const ROLES = ["Attorney", "CPA", "Bookkeeper", "Lender", "Insurance broker", "Business partner", "Other"];
+const ROLES = ["Attorney", "CPA", "Bookkeeper", "Lender", "Insurance broker", "Contractor", "Architect", "Business partner", "Other"];
 const ENG_KEY = "sypher-room-engagement";
+const SHEET_KEY = "sypher-room-sheet";
 const POLL_MS = 20000;
+const ALIASES = { overview: "home", tasks: "requests", timeline: "home" };
 
-let session, engagements = [], eng = null, room = null, pollTimer = null;
+let session, engagements = [], eng = null, room = null, pollTimer = null, bell = null, grid = null, focusReq = null, softTimer = null;
 const unread = { private: 0, team: 0 };
 
 const isMember = () => eng?.access === "member";
 const me = () => session.user.id;
 const myMembership = () => room?.roster?.members?.find((m) => m.user_id === me());
 function tabList() {
-  if (!isMember()) return CLIENT_TABS;
+  const pricing = room?.sheets?.length ? [["pricing", "Pricing"]] : [];
+  if (!isMember()) {
+    return [["home", "Home"], ["requests", "Requests"], ...pricing, ["documents", "Documents"], ["messages", "Messages"], ["plan", "Plan"], ["team", "Team"]];
+  }
   const m = myMembership() || {};
-  return [["tasks", "Tasks"], ...(m.can_message ? [["messages", "Messages"]] : []), ...(m.can_files ? [["files", "Files"]] : [])];
+  return [["home", "Home"], ["requests", "Requests"], ...pricing, ...(m.can_message ? [["messages", "Messages"]] : []), ...(m.can_files ? [["files", "Files"]] : [])];
 }
 const tab = () => {
-  const t = location.hash.slice(1);
+  const raw = location.hash.slice(1).split("=")[0];
+  const t = ALIASES[raw] || raw;
   const list = tabList();
   return list.some(([k]) => k === t) ? t : list[0][0];
 };
@@ -87,7 +97,11 @@ async function loadRoom() {
       mine.can_files ? store.deliverables(id) : [],
       mine.can_message ? store.teamLastRead(id, me()) : null,
     ]);
-    room = { roster, actions, teamMessages, teamFiles, deliverables, teamLastRead: lastRead };
+    const [requestFiles, parties, sheets] = await Promise.all([
+      store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []),
+    ]);
+    room = { roster, actions, teamMessages, teamFiles, deliverables, teamLastRead: lastRead, requestFiles, parties, sheets };
+    await loadPricing(room);
     store.touchMembership(id).catch(() => {});
   } else {
     const [assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, lastRead] = await Promise.all([
@@ -95,9 +109,26 @@ async function loadRoom() {
       store.actionItems(id), store.deliverables(id), store.messages(id), store.agreement(id).catch(() => null), store.activity(id, 120),
       store.roster(id).catch(() => null), store.messages(id, "team"), store.teamFiles(id).catch(() => []), store.teamLastRead(id, me()).catch(() => null),
     ]);
-    room = { assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, teamLastRead: lastRead };
+    const [requestFiles, parties, sheets] = await Promise.all([
+      store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []),
+    ]);
+    room = { assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, teamLastRead: lastRead, requestFiles, parties, sheets };
+    await loadPricing(room);
   }
   countUnread();
+}
+
+/** Lines (and, owner side, the budget) for each pricing sheet, for the Home summary. */
+async function loadPricing(r) {
+  r.sheetLines = new Map();
+  r.budget = null;
+  if (!r.sheets.length) return;
+  const [lineSets, budget] = await Promise.all([
+    Promise.all(r.sheets.map((s) => store.sovLines(s.id).catch(() => []))),
+    isMember() ? [] : store.sovBudget(eng.id).catch(() => []),
+  ]);
+  r.sheets.forEach((s, i) => r.sheetLines.set(s.id, lineSets[i]));
+  r.budget = budget.length ? new Map(budget.map((b) => [b.line_id, b])) : null;
 }
 
 function countUnread() {
@@ -152,8 +183,13 @@ function tabs() {
     const soft = (n, label) => `<span class="room-tabs__badge room-tabs__badge--soft" aria-label="${n} ${label}">${n}</span>`;
     if (k === "messages") { const n = isMember() ? unread.team : unread.private; return n ? strong(n, "unread") : ""; }
     if (k === "team" && unread.team) return strong(unread.team, "unread");
-    if (k === "overview") { const n = myOpenActions().length + openAssignments().length; return n ? soft(n, "for you") : ""; }
-    if (k === "tasks") { const n = myOpenActions().length; return n ? soft(n, "open") : ""; }
+    if (k === "home") { const n = attention().length; return n ? soft(n, "need you") : ""; }
+    if (k === "requests") { const n = room.actions.filter(needsMe).length; return n ? strong(n, "for you") : ""; }
+    if (k === "pricing") { const n = room.sheets.filter(sheetNeedsMe).length; return n ? strong(n, "to act on") : ""; }
+    const alerts = (links) => (bell ? links.reduce((sum, l) => sum + bell.unread(eng.id, l).length, 0) : 0);
+    if (k === "documents") { const n = alerts(["documents"]); return n ? strong(n, "new") : ""; }
+    if (k === "plan") { const n = alerts(["plan"]); return n ? soft(n, "new") : ""; }
+    if (k === "files") { const n = alerts(["files", "documents"]); return n ? strong(n, "new") : ""; }
     return "";
   };
   return `<nav class="room-tabs" aria-label="${isMember() ? "Team space" : "Client room"}"><div class="p-shell room-tabs__inner">
@@ -164,7 +200,6 @@ function tabs() {
 /* --------------------------------------------------------------- tasks */
 // "Mine": for the client, tasks with no assignee (or assigned to them); for a member, theirs.
 const isMine = (a) => (isMember() ? a.assignee_id === me() : !a.assignee_id || a.assignee_id === me());
-const myOpenActions = () => (room?.actions || []).filter((a) => isMine(a) && !a.done_at);
 const openAssignments = () => (room?.assignments || []).filter((a) => ["open", "reopened"].includes(a.status));
 
 function actionList(items, { showAssignee = false, canDelete = false } = {}) {
@@ -288,30 +323,255 @@ function teamPeek() {
   </section>`;
 }
 
-function viewOverview() {
-  const mine = room.actions.filter(isMine);
-  const asg = room.assignments;
-  const nothing = !mine.length && !asg.length;
-  const n = myOpenActions().length + openAssignments().length;
-  return `<div class="p-grid">
-    <div class="p-stack">
-      <section class="p-card p-card--accent" aria-label="For you">
-        <div class="p-row"><h2 class="p-kicker">For you</h2>${n ? `<span class="p-muted">${n} open</span>` : ""}</div>
-        ${nothing ? `<p class="p-empty">Nothing needs you right now.</p>` : ""}
-        ${mine.length ? actionList(mine, { canDelete: true }) : ""}
-        ${asg.length ? `<h3 class="room-sub">Questionnaires</h3><ul class="p-list">${asg.map(assignmentCard).join("")}</ul>` : ""}
-        ${taskForm()}
-      </section>
-      ${updatesCard()}
+/* ------------------------------------------------------------- requests */
+const KIND = { task: "To-do", document: "Document", answer: "Question", approval: "Approval", pricing: "Pricing" };
+const REQ_STATUS = { open: ["Open", "pill--teal"], submitted: ["Awaiting review", "pill--gold"], changes_requested: ["Changes requested", "pill--red"], accepted: ["Done", "pill--navy"] };
+const clientId = () => room.roster?.client?.user_id || null;
+const isLive = (a) => a.status === "open" || a.status === "changes_requested";
+// Mine to answer: the client answers anything with no one named; a member, what's asked of them.
+const canRespond = (a) => (isMember() ? a.assignee_id === me() : !a.assignee_id || a.assignee_id === me());
+// Mine to review: what I asked for, or (the client) anything asked of someone else on the engagement.
+const canReview = (a) => a.status === "submitted" && a.kind !== "pricing" && (a.created_by === me() || (!isMember() && !!a.assignee_id && a.assignee_id !== me()));
+const needsMe = (a) => (isLive(a) && canRespond(a)) || canReview(a);
+/** Who the ball is with: the person asked while it's open, whoever asked once it's answered. */
+const waitingOn = (a) => (isLive(a) ? a.assignee_id || clientId() : a.created_by);
+const waitingOnOthers = () => room.actions.filter((a) => a.status !== "accepted" && !needsMe(a) && (!isMember() || a.created_by === me() || a.assignee_id === me()));
+function realName(uid) {
+  if (!uid) return room.roster?.client?.name || "Client";
+  if (uid === me()) return session.profile.full_name || "You";
+  return personName(uid);
+}
+const askedName = (a) => (a.assignee_id ? personName(a.assignee_id) : isMember() ? (room.roster?.client?.name || "Client") : "You");
+const fromName = (a) => (a.created_by ? personName(a.created_by) : ADMIN_CONTACT.name);
+
+function dueBit(a) {
+  if (!a.due_date || a.status === "accepted") return "";
+  return `<span class="req__due${overdue(a.due_date) ? " is-late" : ""}">${overdue(a.due_date) ? "Was due" : "Due"} ${esc(dueText(a.due_date))}</span>`;
+}
+
+function fileChip(f) {
+  return `<li><button type="button" class="req__file" data-open-file="${esc(f.path)}" title="${esc(personName(f.uploaded_by))} · ${esc(relTime(f.created_at))}">
+    <span aria-hidden="true">${ext(f.name)}</span>${esc(f.name)}${f.size ? ` <small>${esc(fmtSize(f.size))}</small>` : ""}</button>
+    ${f.uploaded_by === me() && a11yRemovable(f) ? `<button type="button" class="p-linkbtn" data-req-file-delete="${esc(f.id)}" aria-label="Remove ${esc(f.name)}">Remove</button>` : ""}</li>`;
+}
+const a11yRemovable = (f) => { const a = room.actions.find((x) => x.id === f.request_id); return a && a.status !== "accepted"; };
+
+function respondForm(a) {
+  const ph = a.kind === "document" ? "A note with the files (optional)" : a.kind === "approval" ? "Approve, with any conditions" : "Your answer";
+  return `<form class="req__respond" data-respond="${esc(a.id)}">
+    <label class="visually-hidden" for="rs-${esc(a.id)}">Your answer to ${esc(a.title)}</label>
+    <textarea class="p-textarea" id="rs-${esc(a.id)}" name="note" rows="3" maxlength="4000" placeholder="${esc(ph)}">${a.status === "changes_requested" ? "" : esc(a.response || "")}</textarea>
+    <div class="req__bar">
+      <label class="btn btn--ghost btn--sm file-btn">${a.kind === "document" ? "Attach the document" : "Attach files"}<input type="file" name="files" multiple accept="${FILE_ACCEPT}"></label>
+      <span class="req__picked p-muted" aria-live="polite"></span>
+      <button class="btn btn--navy btn--sm" type="submit">${a.kind === "approval" ? "Approve" : a.status === "changes_requested" ? "Send again" : "Send"}</button>
     </div>
-    <div class="p-stack">
-      ${meetingCard()}
-      ${whereThingsStand()}
-      ${latestMessageCard()}
-      ${teamPeek()}
-      ${principalCard()}
-    </div>
+  </form>`;
+}
+
+function requestCard(a) {
+  const [sl, sc] = REQ_STATUS[a.status] || [a.status, ""];
+  const files = (room.requestFiles || []).filter((f) => f.request_id === a.id);
+  const respond = isLive(a) && canRespond(a);
+  const actions = [];
+  if (respond && a.kind === "task") actions.push(`<button type="button" class="btn btn--navy btn--sm" data-req-done="${esc(a.id)}">Mark done</button>`);
+  if (respond && a.kind === "pricing") actions.push(`<a class="btn btn--navy btn--sm" href="#pricing">Open the pricing sheet</a>`);
+  if (canReview(a)) actions.push(`<button type="button" class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button>`, `<button type="button" class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>`);
+  if (a.kind === "task" && a.status === "accepted" && canRespond(a)) actions.push(`<button type="button" class="p-linkbtn" data-req-undo="${esc(a.id)}">Not done after all</button>`);
+  if (a.created_by === me() && a.status === "open") actions.push(`<button type="button" class="p-linkbtn" data-task-delete="${esc(a.id)}">Remove</button>`);
+  return `<li class="req req--${esc(a.kind)} is-${esc(a.status)}" id="req-${esc(a.id)}">
+    <div class="req__head"><span class="req__kind">${esc(KIND[a.kind] || a.kind)}</span><h3 class="req__title">${esc(a.title)}</h3><span class="pill pill--dot ${sc}">${esc(sl)}</span></div>
+    ${a.detail ? `<p class="req__detail">${esc(a.detail)}</p>` : ""}
+    <p class="req__meta"><span>${esc(fromName(a))} → ${esc(askedName(a))}</span>${dueBit(a)}${a.submitted_at && a.status !== "open" ? `<span>Answered ${esc(relTime(a.submitted_at))}</span>` : ""}</p>
+    ${a.status === "changes_requested" && a.review_note ? `<div class="req__review"><b>What needs to change</b>${paragraphs(a.review_note)}</div>` : ""}
+    ${a.response ? `<div class="req__answer"><b>${esc(a.submitted_by ? personName(a.submitted_by) : "Answer")}${a.submitted_by ? " answered" : ""}</b>${paragraphs(a.response)}</div>` : ""}
+    ${a.status === "accepted" && a.review_note ? `<p class="req__meta">Note: ${esc(a.review_note)}</p>` : ""}
+    ${files.length ? `<ul class="req__files">${files.map(fileChip).join("")}</ul>` : ""}
+    ${respond && !["task", "pricing"].includes(a.kind) ? respondForm(a) : ""}
+    ${actions.length ? `<div class="req__actions">${actions.join("")}</div>` : ""}
+  </li>`;
+}
+
+function askForm() {
+  const kinds = isMember() ? ["document", "answer", "approval"] : ["task", "document", "answer", "approval"];
+  const parties = (room.parties || []).filter((p) => p.id !== me());
+  const opt = (p) => `<option value="${p.role === "Client" ? "" : esc(p.id)}">${esc(p.name)}${p.role ? ` (${esc(p.role)}${p.org ? `, ${esc(p.org)}` : ""})` : ""}</option>`;
+  const who = isMember() ? parties.map(opt).join("") : `<option value="">Me (a to-do for myself)</option>${parties.map(opt).join("")}`;
+  return `<details class="room-add req-ask"><summary class="btn btn--ghost btn--sm">Ask for something</summary>
+    <form class="p-form p-form--2" id="ask-form">
+      <div class="p-field"><label for="ask-kind">What you need</label><select class="p-select" id="ask-kind" name="kind">${kinds.map((k) => `<option value="${k}"${k === "document" ? " selected" : ""}>${{ task: "A to-do", document: "A document or file", answer: "An answer to a question", approval: "An approval" }[k]}</option>`).join("")}</select></div>
+      <div class="p-field"><label for="ask-who">From</label><select class="p-select" id="ask-who" name="assignee_id">${who}</select></div>
+      <div class="p-field p-span"><label for="ask-title">Request</label><input class="p-input" id="ask-title" name="title" required maxlength="200" placeholder="e.g. The signed lease, all pages"></div>
+      <div class="p-field"><label for="ask-due">By (optional)</label><input class="p-input" id="ask-due" name="due_date" type="date"></div>
+      <div class="p-field"><label for="ask-detail">Detail (optional)</label><input class="p-input" id="ask-detail" name="detail" maxlength="500"></div>
+      <div class="p-span"><button class="btn btn--navy btn--sm" type="submit">Send the request</button> <span class="p-muted">They’re emailed and it shows on their Home.</span></div>
+    </form></details>`;
+}
+
+function viewRequests() {
+  const all = room.actions;
+  const forMe = all.filter(needsMe);
+  const waiting = waitingOnOthers();
+  const done = all.filter((a) => a.status === "accepted" && (!isMember() || a.created_by === me() || a.assignee_id === me()));
+  const list = (items) => `<ul class="req-list">${items.map(requestCard).join("")}</ul>`;
+  return `<div class="req-page">
+    <section class="p-card p-card--accent" aria-label="Requests">
+      <div class="p-row"><h2 class="p-kicker">Requests</h2>${askForm()}</div>
+      <p class="p-muted req-page__lede">Documents, answers and approvals anyone on the engagement needs from anyone else. Answer here with a note and files; whoever asked accepts it or says what needs to change.${isMember() ? " You see what you’ve asked and what’s asked of you." : ""}</p>
+      ${forMe.length ? `<h3 class="room-sub">For you <span class="room-sub__n">${forMe.length}</span></h3>${list(forMe)}` : `<p class="p-empty">Nothing needs you right now.</p>`}
+      ${waiting.length ? `<h3 class="room-sub">Waiting on others <span class="room-sub__n">${waiting.length}</span></h3>${list(waiting)}` : ""}
+      ${done.length ? `<details class="todo-done"><summary>${done.length} done</summary>${list(done)}</details>` : ""}
+    </section>
   </div>`;
+}
+
+/* ----------------------------------------------------------------- home */
+/** A pricing sheet waiting on me: the owner side reviews a submitted one; the contractor prices an open one. */
+const sheetNeedsMe = (s) => (isMember() ? s.contractor_id === me() && ["not_started", "in_progress", "changes_requested"].includes(s.status) : s.status === "submitted");
+
+function attention() {
+  const out = [];
+  for (const a of room.actions.filter(needsMe)) {
+    if (a.kind === "pricing") continue; // the sheet itself is listed below
+    const review = canReview(a);
+    out.push({
+      kind: review ? "Review" : KIND[a.kind], tone: review ? "gold" : a.status === "changes_requested" ? "rust" : "teal",
+      title: a.title,
+      meta: [review ? `${a.submitted_by ? personName(a.submitted_by) : askedName(a)} answered ${a.submitted_at ? relTime(a.submitted_at) : ""}` : `From ${fromName(a)}`, a.status === "changes_requested" ? "changes requested" : ""].filter(Boolean).join(" · "),
+      due: dueBit(a),
+      cta: a.kind === "task" && !review ? `<button type="button" class="btn btn--ghost btn--sm" data-req-done="${esc(a.id)}">Mark done</button>` : `<a class="btn btn--navy btn--sm" href="#requests" data-goto-req="${esc(a.id)}">${review ? "Review" : "Respond"}</a>`,
+    });
+  }
+  for (const s of room.sheets.filter(sheetNeedsMe)) {
+    const lines = room.sheetLines.get(s.id) || [];
+    const t = sovTotals(s, lines);
+    out.push({
+      kind: "Pricing", tone: s.status === "changes_requested" ? "rust" : "gold", title: isMember() ? `Price: ${s.title}` : `Pricing ready to review: ${s.title}`,
+      meta: isMember() ? `${t.answered} of ${t.count} lines answered${s.status === "changes_requested" ? " · changes requested" : ""}` : `Version ${s.version} · ${money(t.total)} · from ${realName(s.contractor_id)}`,
+      due: "", cta: `<a class="btn btn--navy btn--sm" href="#pricing" data-goto-sheet="${esc(s.id)}">${isMember() ? (t.answered ? "Continue pricing" : "Start pricing") : "Review"}</a>`,
+    });
+  }
+  if (!isMember()) {
+    for (const asg of openAssignments()) {
+      const p = asg.progress, done = p.answered + p.unknown;
+      out.push({ kind: "Questions", tone: "teal", title: asg.questionnaire?.title || "Questionnaire", meta: `${done} of ${p.total} answered`, due: asg.due_date ? `<span class="req__due${overdue(asg.due_date) ? " is-late" : ""}">Due ${esc(dueText(asg.due_date))}</span>` : "",
+        cta: `<a class="btn btn--navy btn--sm" href="questionnaire.html?a=${encodeURIComponent(asg.id)}">${done ? "Continue" : "Begin"}</a>` });
+    }
+    if (unread.private) out.push({ kind: "Message", tone: "navy", title: `${unread.private} new message${unread.private > 1 ? "s" : ""} from ${ADMIN_CONTACT.name.split(" ")[0]}`, meta: "", due: "", cta: `<a class="btn btn--ghost btn--sm" href="#messages">Read</a>` });
+  }
+  return out;
+}
+
+function attentionCard() {
+  const items = attention();
+  return `<section class="p-card p-card--accent home-attn" aria-label="Needs your attention">
+    <div class="p-row"><h2 class="p-kicker">Needs your attention</h2>${items.length ? `<span class="p-muted">${items.length}</span>` : ""}</div>
+    ${items.length ? `<ul class="attn-list">${items.map((i) => `<li class="attn attn--${i.tone}">
+      <span class="attn__kind">${esc(i.kind)}</span>
+      <div class="attn__body"><p class="attn__title">${esc(i.title)}</p><p class="attn__meta">${esc(i.meta)}${i.due ? ` ${i.due}` : ""}</p></div>
+      <div class="attn__cta">${i.cta}</div></li>`).join("")}</ul>`
+      : `<p class="p-empty">Nothing needs you right now.</p>`}
+    <div class="home-attn__foot">${askForm()}<a class="p-linkbtn" href="#requests">All requests</a></div>
+  </section>`;
+}
+
+function waitingCard() {
+  const items = waitingOnOthers().filter((a) => a.kind !== "pricing");
+  const sheets = room.sheets.filter((s) => !sheetNeedsMe(s) && s.status !== "accepted");
+  if (!items.length && !sheets.length) return "";
+  const groups = new Map();
+  const add = (uid, row) => { const k = uid || "client"; if (!groups.has(k)) groups.set(k, { uid, rows: [] }); groups.get(k).rows.push(row); };
+  for (const a of items) {
+    const [sl] = REQ_STATUS[a.status] || [a.status];
+    add(waitingOn(a), `<li><span class="wait__kind">${esc(KIND[a.kind])}</span><span class="wait__title">${esc(a.title)}</span><span class="wait__meta">${a.status === "submitted" ? `answered, ${esc(sl.toLowerCase())}` : esc(sl.toLowerCase())}${dueBit(a) ? ` · ${dueBit(a)}` : ` · asked ${esc(relTime(a.created_at))}`}</span></li>`);
+  }
+  for (const s of sheets) {
+    const t = sovTotals(s, room.sheetLines.get(s.id) || []);
+    const who = s.status === "submitted" ? null : s.contractor_id;
+    add(who, `<li><span class="wait__kind">Pricing</span><a class="wait__title" href="#pricing" data-goto-sheet="${esc(s.id)}">${esc(s.title)}</a><span class="wait__meta">${esc((SHEET_STATUS[s.status]?.[0] || s.status).toLowerCase())} · ${t.answered} of ${t.count} lines</span></li>`);
+  }
+  return `<section class="p-card home-wait" aria-label="Waiting on others"><h2 class="p-kicker">Waiting on others</h2>
+    ${[...groups.values()].map((g) => `<div class="wait-group">
+      <p class="wait-group__who">${g.uid && isPrincipal(g.uid) ? `<img class="msg__avatar" src="../assets/img/michael-furth-avatar.webp" alt="" width="28" height="28">` : `<span class="msg__avatar msg__avatar--initials" aria-hidden="true">${esc(initials(realName(g.uid)))}</span>`}
+        <b>${esc(g.uid === me() ? "You" : realName(g.uid))}</b>${g.uid ? `<span>${esc(personRole(g.uid))}</span>` : `<span>${esc(room.roster?.client?.organization || "Client")}</span>`}<span class="wait-group__n">${g.rows.length}</span></p>
+      <ul class="wait-list">${g.rows.join("")}</ul></div>`).join("")}
+  </section>`;
+}
+
+function newCard() {
+  const fresh = bell ? bell.unread(eng.id).slice(0, 8) : [];
+  return `<section class="p-card home-new" id="home-new" aria-label="New since your last visit">
+    <div class="p-row"><h2 class="p-kicker">New since your last visit</h2>${fresh.length ? `<button type="button" class="p-linkbtn" data-alerts-read>Mark all read</button>` : ""}</div>
+    ${fresh.length ? `<ul class="new-list">${fresh.map((n) => `<li><a href="#${esc(linkTab(n.link))}" data-alert="${esc(n.id)}"><span class="new-list__title">${esc(n.title)}</span>${n.body ? `<span class="new-list__body">${esc(n.body)}</span>` : ""}<span class="new-list__when">${esc(relTime(n.created_at))}</span></a></li>`).join("")}</ul>`
+      : `<p class="p-muted">You’re up to date. New documents, answers, messages and pricing changes appear here and under the bell.</p>`}
+  </section>`;
+}
+
+function pricingCard() {
+  if (!room.sheets.length) return "";
+  return `<section class="p-card home-price" aria-label="Pricing"><h2 class="p-kicker">Pricing</h2>
+    <ul class="price-list">${room.sheets.map((s) => {
+      const t = sovTotals(s, room.sheetLines.get(s.id) || [], room.budget);
+      const pct = t.count ? t.answered / t.count : 0;
+      return `<li><div class="p-row"><a class="price-list__title" href="#pricing" data-goto-sheet="${esc(s.id)}">${esc(s.title)}</a>${sheetPill(s.status)}</div>
+        <div class="p-progress" role="progressbar" aria-valuenow="${Math.round(pct * 100)}" aria-valuemin="0" aria-valuemax="100" aria-label="Lines answered"><span style="transform:scaleX(${pct})"></span></div>
+        <p class="p-muted">${t.answered} of ${t.count} lines${t.total ? ` · ${money(t.total)}` : ""}${t.perSf ? ` · $${Math.round(t.perSf)}/SF` : ""}${t.budget && t.budget.pricedBudget ? ` · <span class="${t.budget.variance > 0 ? "is-over" : "is-under"}">${t.budget.variance > 0 ? "+" : "−"}${money(Math.abs(t.budget.variance))} vs budget on priced lines</span>` : ""}</p></li>`;
+    }).join("")}</ul>
+  </section>`;
+}
+
+function recentCard() {
+  const items = (room.activity || []).filter((a) => TIMELINE[a.kind]);
+  if (!items.length) return "";
+  const row = (a) => { const [text, icon] = TIMELINE[a.kind](a.detail || {}); return `<li class="timeline__item timeline__item--${icon}"><span class="timeline__dot" aria-hidden="true"></span><p class="timeline__text">${esc(text)}</p><p class="timeline__when"><time datetime="${esc(a.created_at)}">${esc(relTime(a.created_at))}</time></p></li>`; };
+  return `<section class="p-card" aria-label="Recent activity"><h2 class="p-kicker">Recent activity</h2>
+    <ol class="timeline timeline--compact">${items.slice(0, 6).map(row).join("")}</ol>
+    ${items.length > 6 ? `<details class="room-older"><summary>The full timeline (${items.length})</summary>${viewTimeline(true)}</details>` : ""}
+  </section>`;
+}
+
+function viewHome() {
+  if (isMember()) {
+    return `<div class="p-grid">
+      <div class="p-stack">${attentionCard()}${waitingCard()}</div>
+      <div class="p-stack">${newCard()}${pricingCard()}
+        ${myMembership()?.can_message ? `<section class="p-card room-msgpeek"><h2 class="p-kicker">Team thread</h2>
+          ${room.teamMessages.length ? (() => { const l = room.teamMessages[room.teamMessages.length - 1]; return `<p class="room-msgpeek__who">${esc(personName(l.author_id))} · ${esc(relTime(l.created_at))}${unread.team ? ` <span class="pill pill--gold">${unread.team} new</span>` : ""}</p><p class="room-msgpeek__body">${esc(l.body.length > 180 ? `${l.body.slice(0, 180)}…` : l.body)}</p>`; })() : `<p class="p-muted">No messages yet.</p>`}
+          <a class="btn btn--ghost btn--sm" href="#messages">Open the thread</a></section>` : ""}
+        ${principalCard()}</div>
+    </div>`;
+  }
+  return `<div class="p-grid">
+    <div class="p-stack">${attentionCard()}${waitingCard()}${newCard()}${updatesCard()}${recentCard()}</div>
+    <div class="p-stack">${meetingCard()}${whereThingsStand()}${pricingCard()}${latestMessageCard()}${teamPeek()}${principalCard()}</div>
+  </div>`;
+}
+
+/* -------------------------------------------------------------- pricing */
+function currentSheet() {
+  let id = null;
+  try { id = sessionStorage.getItem(SHEET_KEY); } catch (_) { /* ignore */ }
+  return room.sheets.find((s) => s.id === id) || room.sheets.find(sheetNeedsMe) || room.sheets[0];
+}
+function viewPricing() {
+  const cur = currentSheet();
+  return `${room.sheets.length > 1 ? `<nav class="sov-pick" aria-label="Pricing sheets">${room.sheets.map((s) => `<button type="button" class="sov-pick__btn"${s.id === cur.id ? ' aria-current="true"' : ""} data-sheet-pick="${esc(s.id)}">${esc(s.title)} ${sheetPill(s.status)}</button>`).join("")}</nav>` : ""}
+    <div class="sov-root" id="sov-root" data-sheet="${esc(cur.id)}"><div class="p-loading">Loading the sheet…</div></div>`;
+}
+async function mountPricing() {
+  const root = document.getElementById("sov-root");
+  if (!root) return;
+  grid?.destroy();
+  grid = null;
+  try {
+    grid = await mountSov(root, {
+      sheetId: root.dataset.sheet, role: isMember() ? "contractor" : "owner", me: me(), nameOf: realName,
+      onStatus: ({ sheet }) => {
+        const s = room.sheets.find((x) => x.id === sheet.id);
+        if (s && s.status !== sheet.status) { Object.assign(s, sheet); refreshTabs(); }
+      },
+    });
+  } catch (err) { root.innerHTML = `<p class="p-empty">${esc(err.message)}</p>`; }
 }
 
 /* ----------------------------------------------------------- client: plan */
@@ -581,24 +841,6 @@ function viewTeam() {
 }
 
 /* ------------------------------------------------------- member views */
-function viewMemberTasks() {
-  const mine = room.actions.filter(isMine);
-  const others = room.actions.filter((a) => !isMine(a));
-  return `<div class="p-grid">
-    <div class="p-stack">
-      <section class="p-card p-card--accent" aria-label="Your tasks"><div class="p-row"><h2 class="p-kicker">Your tasks</h2>${myOpenActions().length ? `<span class="p-muted">${myOpenActions().length} open</span>` : ""}</div>
-        ${mine.length ? actionList(mine) : `<p class="p-empty">Nothing assigned to you right now.</p>`}</section>
-      ${others.length ? `<section class="p-card" aria-label="The rest of the team"><h2 class="p-kicker">The rest of the team</h2>${actionList(others, { showAssignee: true })}</section>` : ""}
-    </div>
-    <div class="p-stack">
-      ${myMembership()?.can_message ? `<section class="p-card room-msgpeek"><h2 class="p-kicker">Team thread</h2>
-        ${room.teamMessages.length ? (() => { const l = room.teamMessages[room.teamMessages.length - 1]; return `<p class="room-msgpeek__who">${esc(personName(l.author_id))} · ${esc(relTime(l.created_at))}${unread.team ? ` <span class="pill pill--gold">${unread.team} new</span>` : ""}</p><p class="room-msgpeek__body">${esc(l.body.length > 180 ? `${l.body.slice(0, 180)}…` : l.body)}</p>`; })() : `<p class="p-muted">No messages yet.</p>`}
-        <a class="btn btn--ghost btn--sm" href="#messages">Open the thread</a></section>` : ""}
-      ${principalCard()}
-    </div>
-  </div>`;
-}
-
 function viewMemberFiles() {
   return `<div class="thread-wrap">${teamFilesCard({ withShared: true })}</div>`;
 }
@@ -622,35 +864,68 @@ const TIMELINE = {
   milestone_done: (d) => [`Milestone complete: ${d.title || ""}`, "check"],
   member_invited: (d) => [`Joined the team: ${d.title || ""}`, "room"],
   member_revoked: (d) => [`Team access removed: ${d.title || ""}`, "room"],
+  request_submitted: (d) => [`Answered: ${d.title || ""}`, "todo"],
+  request_accepted: (d) => [`Accepted: ${d.title || ""}`, "check"],
+  request_changes: (d) => [`Changes asked for: ${d.title || ""}`, "todo"],
+  pricing_submitted: (d) => [`Pricing submitted: ${d.title || ""}${d.version ? ` (version ${d.version})` : ""}`, "doc"],
+  pricing_accepted: (d) => [`Pricing accepted: ${d.title || ""}`, "check"],
+  pricing_changes: (d) => [`Pricing sent back: ${d.title || ""}`, "todo"],
 };
 
-function viewTimeline() {
+function viewTimeline(inner = false) {
   const items = room.activity.filter((a) => TIMELINE[a.kind]);
   if (!items.length) return `<section class="p-card"><p class="p-empty">The story of the engagement will build up here.</p></section>`;
   let month = "";
-  return `<section class="p-card p-card--accent" aria-label="Timeline"><h2 class="p-kicker">Timeline</h2><ol class="timeline">${items.map((a) => {
+  const wrap = (html) => (inner ? html : `<section class="p-card p-card--accent" aria-label="Timeline"><h2 class="p-kicker">Timeline</h2>${html}</section>`);
+  return wrap(`<ol class="timeline">${items.map((a) => {
     const [text, icon] = TIMELINE[a.kind](a.detail || {});
     const m = fmtDate(a.created_at, { month: "long", year: "numeric" });
     const head = m !== month ? `<li class="timeline__month">${esc(m)}</li>` : "";
     month = m;
     return `${head}<li class="timeline__item timeline__item--${icon}"><span class="timeline__dot" aria-hidden="true"></span>
       <p class="timeline__text">${esc(text)}</p><p class="timeline__when"><time datetime="${esc(a.created_at)}">${esc(fmtDate(a.created_at, { month: "short", day: "numeric" }))} · ${esc(new Date(a.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</time></p></li>`;
-  }).join("")}</ol></section>`;
+  }).join("")}</ol>`);
 }
 
 /* -------------------------------------------------------------- render */
+// Opening a tab marks the alerts that point at it as seen.
+const SEEN = { requests: ["requests"], pricing: ["pricing"], documents: ["documents"], messages: ["messages"], plan: ["plan"], team: ["files"], files: ["files", "documents"] };
+/** The tab an alert's link opens, for this person. */
+function linkTab(link) {
+  const t = isMember() ? { documents: "files", plan: "home", files: "files" }[link] || link : { files: "team" }[link] || link;
+  return tabList().some(([k]) => k === t) ? t : "home";
+}
+
 function renderTab(focus = false) {
   const views = isMember()
-    ? { tasks: viewMemberTasks, messages: viewMessages, files: viewMemberFiles }
-    : { overview: viewOverview, plan: viewPlan, documents: viewDocuments, messages: viewMessages, team: viewTeam, timeline: viewTimeline };
+    ? { home: viewHome, requests: viewRequests, pricing: viewPricing, messages: viewMessages, files: viewMemberFiles }
+    : { home: viewHome, requests: viewRequests, pricing: viewPricing, plan: viewPlan, documents: viewDocuments, messages: viewMessages, team: viewTeam };
+  const t = tab();
+  if (location.hash.slice(1) && location.hash.slice(1) !== t && ALIASES[location.hash.slice(1)]) history.replaceState(null, "", `#${t}`);
+  if (t !== "pricing" && grid) { grid.destroy(); grid = null; }
+  bell?.markSeen(eng.id, SEEN[t] || []);
   refreshTabs();
   // Stick the tabs just under the portal header, whatever height it renders at.
   const header = document.getElementById("p-header");
   if (header) document.documentElement.style.setProperty("--p-header-h", `${header.offsetHeight}px`);
   const body = document.getElementById("room-body");
-  body.innerHTML = views[tab()]();
+  body.classList.toggle("room-body--wide", t === "pricing");
+  if (t === "pricing" && grid && document.getElementById("sov-root")?.dataset.sheet === currentSheet()?.id) return; // already showing
+  body.innerHTML = views[t]();
   scrollThreads();
   markReadIfNeeded();
+  if (t === "pricing") {
+    // The sheet is the work: once it's drawn, bring it up under the tabs.
+    mountPricing().then(() => {
+      const tabsEl = document.querySelector(".room-tabs");
+      if (tabsEl && focus && window.scrollY < tabsEl.offsetTop) window.scrollTo({ top: tabsEl.offsetTop - (document.getElementById("p-header")?.offsetHeight || 0) });
+    });
+  }
+  if (focusReq) {
+    const el = document.getElementById(`req-${focusReq}`);
+    focusReq = null;
+    if (el) { el.scrollIntoView({ block: "center" }); el.classList.add("is-flash"); (el.querySelector("textarea, .btn") || el).focus({ preventScroll: true }); return; }
+  }
   if (focus) body.focus({ preventScroll: true });
 }
 
@@ -678,11 +953,62 @@ async function render() {
   mount();
   clearInterval(pollTimer);
   pollTimer = setInterval(poll, POLL_MS);
+  bell = await mountBell({
+    me: me(),
+    titleOf: (id) => (engagements.length > 1 ? engagements.find((e) => e.id === id)?.title || "" : ""),
+    open: openAlert,
+    onChange: onAlert,
+  }).catch((err) => { console.warn("Alerts unavailable:", err.message); return null; });
+  refreshTabs();
+  if (tab() === "home") repaintNew();
+}
+
+async function switchTo(id) {
+  try { sessionStorage.setItem(ENG_KEY, id); } catch (_) { /* ignore */ }
+  grid?.destroy(); grid = null;
+  eng = engagements.find((x) => x.id === id);
+  main.innerHTML = `<div class="p-loading">Loading…</div>`;
+  history.replaceState(null, "", location.pathname);
+  await loadRoom();
+  mount();
+}
+
+async function openAlert(n) {
+  if (n.engagement_id && n.engagement_id !== eng.id && engagements.some((e) => e.id === n.engagement_id)) await switchTo(n.engagement_id);
+  const t = linkTab(n.link);
+  if (location.hash.slice(1) === t) renderTab(true); else location.hash = t;
+}
+
+function repaintNew() {
+  const el = document.getElementById("home-new");
+  if (el) el.outerHTML = newCard();
+}
+
+/** Something new arrived (or alerts were read). Refresh what's on screen, unless the person is typing. */
+function onAlert(row) {
+  refreshTabs();
+  if (tab() === "home") repaintNew();
+  if (!row || row.engagement_id !== eng?.id) return;
+  clearTimeout(softTimer);
+  softTimer = setTimeout(softReload, 600);
+}
+async function softReload() {
+  const body = document.getElementById("room-body");
+  const typing = body && body.contains(document.activeElement) && document.activeElement.matches("input, textarea, select");
+  try {
+    await loadRoom();
+    refreshTabs();
+    if (tab() === "pricing" || typing) return; // the grid keeps itself current; never wipe what someone is typing
+    const y = window.scrollY;
+    renderTab();
+    window.scrollTo(0, y);
+  } catch (err) { console.warn(err); }
 }
 
 async function reload() {
   await loadRoom();
   const y = window.scrollY;
+  grid?.destroy(); grid = null;
   mount();
   window.scrollTo(0, y);
 }
@@ -724,8 +1050,42 @@ main.addEventListener("click", async (e) => {
       } catch (err) { if (win) win.close(); throw new Error(`Couldn’t open the file: ${err.message}`); }
       return;
     }
+    if (t.dataset.gotoReq) { focusReq = t.dataset.gotoReq; if (location.hash === "#requests") { e.preventDefault(); renderTab(); } return; }
+    if (t.dataset.gotoSheet) { try { sessionStorage.setItem(SHEET_KEY, t.dataset.gotoSheet); } catch (_) { /* ignore */ } if (location.hash === "#pricing") { e.preventDefault(); grid?.destroy(); grid = null; renderTab(); } return; }
+    if (t.dataset.sheetPick) { try { sessionStorage.setItem(SHEET_KEY, t.dataset.sheetPick); } catch (_) { /* ignore */ } await grid?.flush(); grid?.destroy(); grid = null; renderTab(); return; }
+    if (t.dataset.alert) { e.preventDefault(); const n = bell?.list.find((x) => x.id === t.dataset.alert); if (n) { await bell.markRead([n.id]); openAlert(n); } return; }
+    if (t.hasAttribute("data-alerts-read")) { const ids = bell?.unread(eng.id).map((n) => n.id) || []; if (ids.length) await bell.markRead(ids); repaintNew(); return; }
+    if (t.dataset.reqDone) {
+      t.disabled = true;
+      await store.submitRequest(t.dataset.reqDone);
+      toast("Marked done. Everyone on it can see.");
+      await reload();
+      return;
+    }
+    if (t.dataset.reqUndo) { await store.setActionDone(t.dataset.reqUndo, false); toast("Moved back to the list."); await reload(); return; }
+    if (t.dataset.reqReview) {
+      const a = room.actions.find((x) => x.id === t.dataset.req);
+      if (!a) return;
+      if (t.dataset.reqReview === "accept") {
+        await store.reviewRequest(a.id, true);
+        toast(`Accepted. ${askedName(a)} has been told.`);
+      } else {
+        const note = await promptDialog({ title: "Ask for changes", body: `<p class="p-muted">${esc(a.title)}</p>`, label: "What needs to change", required: true, confirmLabel: "Send back" });
+        if (!note) return;
+        await store.reviewRequest(a.id, false, note);
+        toast("Sent back with your note.");
+      }
+      store.notify("request_update", a.id);
+      await reload();
+      return;
+    }
+    if (t.dataset.reqFileDelete) {
+      const f = room.requestFiles.find((x) => x.id === t.dataset.reqFileDelete);
+      if (f && await confirmDialog({ title: "Remove this file?", body: `<p><strong>${esc(f.name)}</strong> is removed from the request.</p>`, confirmLabel: "Remove" })) { await store.deleteRequestFile(f); await reload(); }
+      return;
+    }
     if (t.dataset.taskDelete) {
-      if (await confirmDialog({ title: "Remove this task?", body: "<p>It disappears for everyone.</p>", confirmLabel: "Remove" })) {
+      if (await confirmDialog({ title: "Remove this request?", body: "<p>It disappears for everyone.</p>", confirmLabel: "Remove" })) {
         await store.deleteActionItem(t.dataset.taskDelete); await reload();
       }
       return;
@@ -756,13 +1116,12 @@ main.addEventListener("click", async (e) => {
 });
 
 main.addEventListener("change", async (e) => {
-  if (e.target.matches("[data-switch]")) {
-    try { sessionStorage.setItem(ENG_KEY, e.target.value); } catch (_) { /* ignore */ }
-    eng = engagements.find((x) => x.id === e.target.value);
-    main.innerHTML = `<div class="p-loading">Loading…</div>`;
-    history.replaceState(null, "", location.pathname);
-    await loadRoom();
-    mount();
+  if (e.target.matches("[data-switch]")) { await switchTo(e.target.value); return; }
+  if (e.target.matches(".req__respond input[type=file]")) {
+    const files = [...e.target.files];
+    let note = files.map((f) => `${f.name} · ${fmtSize(f.size)}`).join(", ");
+    try { files.forEach(checkFile); } catch (err) { note = err.message; e.target.value = ""; }
+    e.target.closest("form").querySelector(".req__picked").textContent = note;
     return;
   }
   if (e.target.matches('#team-file-form input[type="file"]')) {
@@ -813,6 +1172,31 @@ main.addEventListener("submit", async (e) => {
       el.innerHTML = threadHtml(thread === "team" ? room.teamMessages : room.messages, thread);
       scrollThreads();
       form.body.focus();
+    } else if (form.dataset.respond) {
+      const a = room.actions.find((x) => x.id === form.dataset.respond);
+      const note = form.note.value.trim();
+      const files = [...form.files.files];
+      files.forEach(checkFile);
+      const had = room.requestFiles.some((f) => f.request_id === a.id);
+      if (a.kind === "document" && !files.length && !had) throw new Error("Attach the document first.");
+      if (a.kind === "answer" && !note && !files.length) throw new Error("Write your answer first.");
+      for (let i = 0; i < files.length; i++) {
+        if (btn) btn.textContent = files.length > 1 ? `Uploading ${i + 1} of ${files.length}…` : "Uploading…";
+        await store.uploadRequestFile(eng.id, a.id, files[i]);
+      }
+      if (btn) btn.textContent = "Sending…";
+      await store.submitRequest(a.id, note);
+      store.notify("request_update", a.id);
+      toast(`Sent. ${fromName(a)} has been told.`);
+      await reload();
+    } else if (form.id === "ask-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const kind = v("kind");
+      const row = await store.addActionItem({ engagement_id: eng.id, kind, title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: room.actions.length + 1 });
+      const self = !row.assignee_id && !isMember();
+      if (!self) store.notify("action_item", row.id);
+      toast(self ? "Added to your list." : `Sent to ${askedName(row)}. They’ve been emailed.`);
+      await reload();
     } else if (form.id === "task-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const row = await store.addActionItem({ engagement_id: eng.id, title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: room.actions.length + 1 });
