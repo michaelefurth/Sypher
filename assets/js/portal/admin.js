@@ -5,6 +5,7 @@ import { store, progressOf, FILE_ACCEPT, checkFile } from "./store.js";
 import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, promptDialog, statusPill, progressBar, download } from "./ui.js";
 import { SOV_TEMPLATES, sovTotals, sheetPill, money } from "./sov.js";
 import { mountBell } from "./bell.js";
+import { createFromTemplate, modelSummary } from "./model.js";
 import { viewInquiries, viewInquiry, viewProposals, viewProposal, pipelineSubmit, pipelineClick } from "./admin-pipeline.js";
 
 const main = document.getElementById("main");
@@ -134,6 +135,8 @@ async function viewEngagement(id) {
   ]);
   const [requestFiles, sheets, budgetRows] = await Promise.all([store.requestFiles(id).catch(() => []), store.sovSheets(id).catch(() => []), store.sovBudget(id).catch(() => [])]);
   const sheetLines = await Promise.all(sheets.map((x) => store.sovLines(x.id).catch(() => [])));
+  const models = await store.pmModels(id).catch(() => []);
+  const summaries = await Promise.all(models.map((m) => modelSummary(m.id).catch(() => null)));
   const budget = budgetRows.length ? new Map(budgetRows.map((b) => [b.line_id, b])) : null;
   window.__team = { roster, teamFiles };
   const members = roster?.members || [];
@@ -164,8 +167,9 @@ async function viewEngagement(id) {
           ${members.length ? `<ul class="people">${members.map((m) => `<li class="person${m.status !== "active" ? " is-off" : ""}">
             <span class="msg__avatar msg__avatar--initials" aria-hidden="true">${esc((m.name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase())}</span>
             <div class="person__body"><p class="person__name">${esc(m.name)}</p><p class="person__role">${esc([m.role_label, m.organization, m.email].filter(Boolean).join(" · "))}</p>
-              <p class="person__access">${esc(accessText(m))} · ${[m.can_message && "messages", m.can_files && "files", "tasks"].filter(Boolean).join(", ")}${m.last_seen_at ? ` · last in ${esc(relTime(m.last_seen_at))}` : m.status === "active" ? " · not signed in yet" : ""}</p></div>
+              <p class="person__access">${esc(accessText(m))} · ${[m.can_message && "messages", m.can_files && "files", m.can_model && "project model", "requests"].filter(Boolean).join(", ")}${m.last_seen_at ? ` · last in ${esc(relTime(m.last_seen_at))}` : m.status === "active" ? " · not signed in yet" : ""}</p></div>
             <div class="btn-row" style="gap:.4rem 1rem;flex-direction:column;align-items:flex-end">
+              ${m.status === "active" && models.length && !sheets.some((x) => x.contractor_id === m.user_id) ? `<button class="p-linkbtn" data-member-model="${esc(m.id)}" data-allow="${m.can_model ? "0" : "1"}">${m.can_model ? "Remove model access" : "Give model access"}</button>` : ""}
               ${m.status === "active" ? `<button class="p-linkbtn" data-member-extend="${esc(m.id)}">+30 days</button><button class="p-linkbtn p-linkbtn--danger" data-member-revoke="${esc(m.id)}">Remove</button>` : `<button class="p-linkbtn" data-member-restore="${esc(m.id)}">Restore 30 days</button>`}
             </div></li>`).join("")}</ul>` : `<p class="p-muted">Nobody outside yet. The client can add their attorney, CPA or lender from their room, or you can add them here. Members see only the team thread, team files and their tasks.</p>`}
           <details class="room-add"><summary class="p-linkbtn">Add someone</summary>
@@ -205,7 +209,8 @@ async function viewEngagement(id) {
               <div class="req__actions">
                 ${a.status === "submitted" && a.kind !== "pricing" ? `<button class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button><button class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>` : ""}
                 ${a.kind === "pricing" && a.link_ref ? `<a class="p-linkbtn" href="pricing.html?s=${esc(a.link_ref)}">Open the sheet</a>` : ""}
-                ${a.status !== "accepted" && a.kind !== "pricing" ? `<button class="p-linkbtn" data-req-answer="${esc(a.id)}">Answer for them</button>` : ""}
+                ${a.link_kind === "pm_input" && models.length ? `<a class="p-linkbtn" href="project.html?m=${esc(models[0].id)}">Open the model</a>` : ""}
+                ${a.status !== "accepted" && a.kind !== "pricing" && a.link_kind !== "pm_input" ? `<button class="p-linkbtn" data-req-answer="${esc(a.id)}">Answer for them</button>` : ""}
                 <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`;
           }).join("")}</ul>` : `<p class="p-muted">Ask the client or anyone on the team for a document, an answer, an approval or a to-do. They answer in the portal with a note and files, and you accept it or send it back. Anyone on the engagement can ask you, too.</p>`}
           <form class="p-form p-form--2" id="action-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
@@ -216,6 +221,20 @@ async function viewEngagement(id) {
             <div class="p-field"><label for="ac-due">Due</label><input class="p-input" id="ac-due" name="due_date" type="date"></div>
             <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email them</label><button class="btn btn--ghost btn--sm" type="submit">Send request</button></div>
           </form>
+        </section>
+        <section class="p-card p-card--navy" id="project"><p class="p-kicker">Project model</p>
+          ${models.length ? `<ul class="pm-adminlist">${models.map((m, i) => { const r = summaries[i]?.result; const open = summaries[i]?.inputs.filter((x) => x.status !== "confirmed").length ?? 0; return `<li>
+            <div class="p-row"><a class="link-on-dark" href="project.html?m=${esc(m.id)}"><b>${esc(m.title)}</b></a>${r ? `<span>${money(r.total)}</span>` : ""}</div>
+            ${r ? `<p class="pm-adminlist__figs">Loan ${money(r.loan)} · equity ${money(r.equity)} · coverage yr 2 ${r.years[1].dscr == null ? "—" : `${r.years[1].dscr.toFixed(2)}×`} · ${open} open assumption${open === 1 ? "" : "s"}</p>` : ""}
+            <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--gold btn--sm" href="project.html?m=${esc(m.id)}">Open the model</a><button class="p-linkbtn" data-model-delete="${esc(m.id)}" style="color:var(--champagne)">Delete</button></div></li>`; }).join("")}</ul>`
+            : `<p style="color:var(--on-dark-muted)">One place for the whole project: land, the contractor's pricing (linked live), contingency, soft and opening costs, the loan, equity, monthly draws, interest during construction, and coverage after opening. Advisers you give access to can confirm figures and comment.</p>`}
+          <details class="room-add"${models.length ? "" : " open"}><summary class="p-linkbtn" style="color:var(--champagne)">New project model</summary>
+            <form class="p-form p-form--2" id="model-form">
+              <div class="p-field p-span"><label for="pm-title" style="color:var(--on-dark-muted)">Title</label><input class="p-input" id="pm-title" name="title" required placeholder="e.g. Phase 1 restaurant: total cost and financing"></div>
+              <div class="p-field"><label for="pm-sheet" style="color:var(--on-dark-muted)">Hard costs from</label><select class="p-select" id="pm-sheet" name="sheet"><option value="">No pricing sheet</option>${sheets.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</select></div>
+              <div class="p-field"><label for="pm-sf" style="color:var(--on-dark-muted)">Building area (SF)</label><input class="p-input" id="pm-sf" name="sf" inputmode="decimal"></div>
+              <div class="p-span"><button class="btn btn--gold btn--sm" type="submit">Create the model</button></div>
+            </form></details>
         </section>
         <section class="p-card p-card--accent" id="pricing"><p class="p-kicker">Pricing (schedule of values)</p>
           ${sheets.length ? `<ul class="price-list">${sheets.map((x, i) => {
@@ -540,6 +559,12 @@ main.addEventListener("submit", async (e) => {
       if (form.notify.checked) store.notify("action_item", row.id);
       toast(form.notify.checked ? "Sent. They've been emailed." : "Request added.");
       route();
+    } else if (form.id === "model-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const sf = Number(String(v("sf")).replace(/[,\s]/g, "")) || null;
+      const m = await createFromTemplate({ engagementId: engId, title: v("title"), sheetId: v("sheet") || null, buildingSf: sf });
+      toast("Model created from the template. Fill in the costs and assumptions.");
+      location.href = `project.html?m=${m.id}`;
     } else if (form.id === "sheet-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const contractor = v("contractor_id") || null;
@@ -627,6 +652,14 @@ main.addEventListener("click", async (e) => {
       store.notify("request_update", t.dataset.req);
       toast(accept ? "Accepted. They've been told." : "Sent back with your note.");
       route();
+    }
+    else if (t.dataset.memberModel) {
+      await store.setMemberModel(t.dataset.memberModel, t.dataset.allow === "1");
+      toast(t.dataset.allow === "1" ? "They can now see the project model." : "Model access removed.");
+      route();
+    }
+    else if (t.dataset.modelDelete) {
+      if (await confirmDialog({ title: "Delete this project model?", body: "<p>Its cost lines, assumptions, comments and saved versions are deleted. The pricing sheet is kept.</p>", confirmLabel: "Delete" })) { await store.pmDeleteModel(t.dataset.modelDelete); toast("Deleted."); route(); }
     }
     else if (t.dataset.reqAnswer) {
       const note = await promptDialog({ title: "Answer for them", body: "<p class=\"p-muted\">Record an answer you received another way (by email or on a call). It's marked as answered by you.</p>", label: "Answer", required: true, confirmLabel: "Save answer" });
