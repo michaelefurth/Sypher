@@ -608,6 +608,147 @@ export const store = {
     return paths.length;
   },
 
+  // ---- requests: to-dos, documents, answers, approvals and pricing asked of anyone on the team ----
+  /** Everyone a request can go to: [{ id, name, role, org }]. */
+  async requestParties(engagementId) {
+    const client = await sb();
+    return check(await client.rpc("request_parties", { eng: engagementId })) || [];
+  },
+  async submitRequest(id, note) {
+    const client = await sb();
+    check(await client.rpc("submit_request", { req: id, note: note || null }));
+  },
+  async reviewRequest(id, accept, note) {
+    const client = await sb();
+    check(await client.rpc("review_request", { req: id, accept, note: note || null }));
+  },
+  async requestFiles(engagementId) {
+    const client = await sb();
+    return check(await client.from("request_files").select("*").eq("engagement_id", engagementId).order("created_at"));
+  },
+  async uploadRequestFile(engagementId, requestId, file) {
+    const client = await sb();
+    const safe = file.name.replace(/[^\w.\-]+/g, "_").slice(-120);
+    const contentType = checkFile(file);
+    const path = `${engagementId}/requests/${requestId}/${crypto.randomUUID()}-${safe}`;
+    check(await client.storage.from("portal").upload(path, typed(file, contentType), { upsert: false, contentType }));
+    try {
+      return check(await client.from("request_files").insert({ request_id: requestId, engagement_id: engagementId, path, name: file.name, size: file.size }).select().single());
+    } catch (err) {
+      await client.storage.from("portal").remove([path]);
+      throw err;
+    }
+  },
+  async deleteRequestFile(f) {
+    const client = await sb();
+    check(await client.from("request_files").delete().eq("id", f.id));
+    await client.storage.from("portal").remove([f.path]);
+  },
+
+  // ---- notifications (written by the database; each person reads only their own) ----
+  async notifications(limit = 60) {
+    const client = await sb();
+    return check(await client.from("notifications").select("*").order("created_at", { ascending: false }).limit(limit));
+  },
+  /** Mark some (or, with no ids, all) of my notifications read. */
+  async markNotificationsRead(ids = null) {
+    const client = await sb();
+    return check(await client.rpc("mark_notifications_read", { ids }));
+  },
+
+  // ---- schedule of values ----
+  async sovSheets(engagementId) {
+    const client = await sb();
+    return check(await client.from("sov_sheets").select("*").eq("engagement_id", engagementId).order("created_at"));
+  },
+  async sovSheet(id) {
+    const client = await sb();
+    return check(await client.from("sov_sheets").select("*").eq("id", id).single());
+  },
+  async sovLines(sheetId) {
+    const client = await sb();
+    return check(await client.from("sov_lines").select("*").eq("sheet_id", sheetId).order("position").order("updated_at"));
+  },
+  /** The owner side's budget per line. Row level security returns nothing to the contractor. */
+  async sovBudget(engagementId) {
+    const client = await sb();
+    return check(await client.from("sov_budget").select("*").eq("engagement_id", engagementId));
+  },
+  async sovVersions(sheetId) {
+    const client = await sb();
+    return check(await client.from("sov_versions").select("id, version, subtotal, ohp, total, submitted_by, created_at").eq("sheet_id", sheetId).order("version", { ascending: false }));
+  },
+  async sovVersion(id) {
+    const client = await sb();
+    return check(await client.from("sov_versions").select("*").eq("id", id).single());
+  },
+  async sovSaveLine(lineId, patch) {
+    const client = await sb();
+    return check(await client.rpc("sov_save_line", { line: lineId, patch }));
+  },
+  async sovAddLine(sheetId, section, description) {
+    const client = await sb();
+    return check(await client.rpc("sov_add_line", { sheet: sheetId, p_section: section || null, p_description: description }));
+  },
+  async sovDeleteLine(lineId) {
+    const client = await sb();
+    check(await client.rpc("sov_delete_line", { line: lineId }));
+  },
+  async sovUpdateSheet(sheetId, patch) {
+    const client = await sb();
+    return check(await client.rpc("sov_update_sheet", { sheet: sheetId, patch }));
+  },
+  async sovSubmit(sheetId) {
+    const client = await sb();
+    return check(await client.rpc("sov_submit", { sheet: sheetId }));
+  },
+  async sovReview(sheetId, accept, note) {
+    const client = await sb();
+    check(await client.rpc("sov_review", { sheet: sheetId, accept, note: note || null }));
+  },
+  async sovReopen(sheetId) {
+    const client = await sb();
+    check(await client.rpc("sov_reopen", { sheet: sheetId }));
+  },
+  async sovLineReview(lineId, note) {
+    const client = await sb();
+    check(await client.rpc("sov_line_review", { line: lineId, p_note: note || null }));
+  },
+  // Admin: set up a sheet, its lines and the budget (direct table access, admin-only by RLS).
+  async sovCreateSheet(fields) {
+    const client = await sb();
+    return check(await client.from("sov_sheets").insert(fields).select().single());
+  },
+  async sovAdminUpdateSheet(id, fields) {
+    const client = await sb();
+    return check(await client.from("sov_sheets").update(fields).eq("id", id).select().single());
+  },
+  async sovDeleteSheet(id) {
+    const client = await sb();
+    check(await client.from("sov_sheets").delete().eq("id", id));
+  },
+  async sovInsertLines(rows) {
+    const client = await sb();
+    return check(await client.from("sov_lines").insert(rows).select());
+  },
+  async sovSaveBudget(row) {
+    const client = await sb();
+    check(await client.from("sov_budget").upsert(row, { onConflict: "line_id" }));
+  },
+
+  /** Live changes. Calls onChange({ table, eventType, new, old }) for each row change the user may see.
+   *  `filters` is a list of { table, filter } (filter as "column=eq.value"). Returns an unsubscribe function. */
+  async subscribe(name, filters, onChange, onStatus) {
+    const client = await sb();
+    let ch = client.channel(`${name}-${crypto.randomUUID().slice(0, 8)}`);
+    for (const f of filters) {
+      ch = ch.on("postgres_changes", { event: "*", schema: "public", table: f.table, ...(f.filter ? { filter: f.filter } : {}) },
+        (p) => onChange({ table: f.table, eventType: p.eventType, new: p.new, old: p.old }));
+    }
+    ch.subscribe((status) => onStatus?.(status));
+    return () => { try { client.removeChannel(ch); } catch (_) { /* gone */ } };
+  },
+
   /** Email the other side about something new. Best effort: never blocks the action itself. */
   async notify(kind, id) {
     try { await invoke("room-notify", { kind, id }); } catch (err) { console.warn("Notification not sent:", err.message); }

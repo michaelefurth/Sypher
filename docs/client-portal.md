@@ -39,6 +39,8 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/migrations/20261103000000_client_room.sql` | Messages, deliverables, client to-dos, the signed agreement in the room, and the timeline |
 | `supabase/migrations/20261104000000_team_access.sql` | Team access for outside advisers: members, team thread, team files, task assignees |
 | `supabase/migrations/20261105000000_security_hardening.sql` | Two-step sign-in required for admin access, allowed file types, function privileges |
+| `supabase/migrations/20261106000000_action_center.sql` | Requests between anyone on an engagement, notifications (the bell), and the schedule of values (pricing sheets with an owner-only budget) |
+| `assets/js/portal/sov.js`, `assets/js/portal/bell.js`, `portal/pricing.html` | The pricing grid (autosave, offline queue, live updates), the alerts bell, and the full-width sheet page for admin |
 | `supabase/config.toml` | Which functions need a signed-in caller, read by `supabase functions deploy` |
 | `scripts/check-csp.mjs` | Checks the site's Content Security Policy (in `.htaccess`) against every page |
 | `scripts/deploy-site.sh` | Copies the public website into `public_html`; used by `.cpanel.yml` and the cron auto-deploy |
@@ -52,9 +54,9 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/invite-client` | Admin-only: invites a client by email and opens their engagement |
 | `supabase/functions/process-submission` | On submit: asks Claude for a draft update, emails you |
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
-| `supabase/functions/room-notify` | Signed-in users: emails the right people about a new message, document, task or team file |
+| `supabase/functions/room-notify` | Signed-in users: emails the right people about a new message, document, request, answer, review, pricing submission or team file |
 | `supabase/functions/invite-member` | The client or admin: adds an attorney, CPA or other adviser to an engagement's team |
-| `supabase/tests/rls-test.mjs` | 160 automated security tests for the access rules |
+| `supabase/tests/rls-test.mjs` | 218 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
@@ -164,23 +166,76 @@ Write new migrations so they can't be half-applied by accident: one change per f
 
 **Opening the engagement.** On an accepted proposal, **Open the engagement** invites the signer to the portal, creates the engagement, copies the milestones from the proposal and sets the start date.
 
-**The client room** (the client's dashboard), in five tabs:
+**The client room** (the client's dashboard). The header carries a **bell** with unread alerts; tabs:
 
-- **Overview:** what needs them (to-dos they tick off, questionnaires), your latest update, the next conversation, where the plan stands, and the latest message.
+- **Home:** front and center.
+  - **Needs your attention:** requests to answer or review, questionnaires, pricing to review, unread messages, each with one button.
+  - **Waiting on others:** grouped by person, with what each owes and when.
+  - **New since your last visit:** unread alerts for this engagement.
+  - Then your latest update, recent activity (with the full timeline one click away), the next conversation, where the plan stands, a pricing summary, the latest message and the team.
+- **Requests:** everything anyone on the engagement has asked of anyone else, split into For you, Waiting on others and Done.
+- **Pricing:** shown once a pricing sheet exists. See *Pricing* below.
 - **Plan:** the milestone track, with the documents each milestone produced, and the decision log.
 - **Documents:** the signed agreement (opens the accepted proposal read-only at `/for/?e=<engagement>`), deliverables from you filed by milestone, and files they've shared.
 - **Messages:** a private thread with you. Each side is emailed when the other writes, at most once every 10 minutes per thread, so a burst of short messages becomes one alert. Your alert includes the text; the client's says only that you've written, like update emails.
-- **Timeline:** everything that has happened, newest first. Messages, documents, to-dos, decisions and milestone changes are logged by the database automatically; AI drafts never appear.
+- **Team:** outside advisers (below).
+
+Old links still work: `#overview` and `#timeline` open Home, and `#tasks` opens Requests.
+
+**Requests.** A request has a kind and a status:
+
+- **Kinds:** a document, an answer, an approval, a plain to-do, or pricing (see below).
+- **Status:** open, then answered (awaiting review), then accepted, or sent back with "changes requested".
+- **Who can ask whom:** the client can ask you or anyone on their team, and gives themselves to-dos. A team member can ask the client, you or another member, but can't create to-dos or pricing requests. You can ask anyone.
+- **Answering:** whoever is asked answers in the portal with a note and files. A to-do is done as soon as it's ticked.
+- **Reviewing:** whoever asked accepts the answer, or sends it back with a note saying what to change. The client can also review anything asked of their team. In admin you can answer on someone's behalf (for an answer you got by email or on a call).
+- **Files on a request:** stored under `<engagement>/requests/<request>/`. Only the people on that request can open them.
+- **Emails:** each step emails the next person.
+
+**Alerts (the bell).** The database writes one alert per person per event, and only about things that person can see: messages, documents, team files, requests and their answers, questionnaires, decisions, milestones and pricing. New alerts arrive live, over Supabase Realtime. Opening a tab marks its alerts read, and **Mark all read** clears the rest. In admin the bell covers every engagement, and choosing an alert opens that engagement.
+
+**Pricing (schedule of values).** A contractor prices a sheet line by line, and the owner side sees each price beside its budget:
+
+- **Creating a sheet:** in admin, open the engagement's **Pricing** card and choose **New pricing sheet**.
+  - Give it a title, a contractor and what you need from them.
+  - Start from the CSI 01–33 template or a blank sheet.
+  - Add the contractor to the team first. They're asked and emailed when the sheet is created.
+- **The sheet page** (`portal/pricing.html?s=<sheet>`, admin only):
+  - edit descriptions and codes, and add or remove lines and sections;
+  - key in prices yourself;
+  - set the **budget** per line (low, base, high);
+  - review the pricing, or reopen it.
+- **The contractor** gets a **Pricing** tab and works in the grid:
+  - every cell saves about half a second after typing stops, or at once on leaving it. Only the changed fields are sent, so two people never overwrite each other;
+  - **Enter** moves down, the arrow keys move between cells, **Esc** undoes the cell, and a column pasted from Excel fills the rows below;
+  - typing `48k` or `1.2m` works;
+  - if the connection drops, edits wait in the browser and land when it's back, even after a reload;
+  - quantity times unit cost fills the amount, and the subtotal, OH&P, total and cost per SF update as they type;
+  - below the grid they give the price's terms: area, location, validity date, OH&P and what it covers, schedule, and basis and exclusions.
+- **Submitting:** before submitting, every line needs a price, or a note if it's Excluded or TBD, and the validity date must be set. Submitting locks the sheet, keeps a copy as a numbered version, and tells the client and you.
+- **The owner side** (the client and you) watches the sheet fill in live:
+  - each line shows its budget, its range, and the variance;
+  - the totals bar compares priced lines with their own budget, so a half-finished sheet isn't judged against the whole budget;
+  - you can ask a question on any line, which the contractor sees;
+  - when it's submitted, you accept the pricing, or send it back with a note;
+  - after a resubmission, each changed line shows the earlier version's figure.
+- **Exports:** CSV (with budget columns on the owner side only), and **Print / PDF** in the site's brand.
+- **The budget stays owner-side.** It lives in its own table, and the database returns nothing from it to the contractor, so it is never in their browser.
 
 **Team access (outside advisers).** The client's **Team** tab, or the **Team** card on your engagement page, adds an attorney, CPA, lender or anyone else by email:
 
 - **Access is time-limited:** 30 days, 90 days (the default) or until the engagement ends. It stops by itself at the end date, when it's removed, or when the engagement is no longer active, and the database enforces each of these. Anyone with access can be extended 30 days, have messaging or files switched off, or be removed at any time; removed or expired people can be restored.
-- **What members see:** a separate **team thread**, **team files** (anyone may upload; you choose which deliverables the team can also see with "Share with team"), and **tasks** assigned to them, which they tick off. They also see the rest of the team's tasks for context.
+- **What members see:**
+  - their own **Home**;
+  - **Requests** they asked or were asked;
+  - a separate **team thread**;
+  - **team files**: anyone may upload, and you choose which deliverables the team also sees with "Share with team";
+  - **Pricing**, only for a contractor assigned a sheet.
 - **What members never see:** your private thread with the client, questionnaires, updates, decisions, milestones, the agreement, the timeline or AI drafts.
 - **Invitations:** new people get the Supabase "Invite user" email (restyle it under Authentication → Emails → Templates); people who already have a portal login get a short note. When a client adds someone, you're emailed straight away.
-- **Tasks:** the client can now add tasks for themselves or anyone on the team, and you can assign tasks to anyone. Assignees are emailed.
+- **Requests:** members see the requests they asked or were asked, and the team's to-dos.
 
-In admin, each engagement page has the private thread with a reply box, the **Team** card (people, invitations, the team thread and team files), **Tasks** (for the client or any team member, optionally emailing them), and **Deliverables** (upload a file up to 50 MB, give it a title, note and milestone, optionally email the client). Unread client messages show on the Overview and next to **Clients & engagements**.
+In admin, each engagement page has the private thread with a reply box, the **Team** card (people, invitations, the team thread and team files), **Requests** (ask the client or any team member for a document, answer, approval or to-do; review answers), **Pricing** (sheets, their progress and budget variance), and **Deliverables** (upload a file up to 50 MB, give it a title, note and milestone, optionally email the client). Unread client messages show on the Overview and next to **Clients & engagements**.
 
 You also manage milestones, decisions and the next meeting from the engagement page. To show a direct line or a response promise on the contact card, fill in `phone` and `response_promise` in `assets/js/portal/config.js`.
 
@@ -257,7 +312,9 @@ Admin → Questionnaires → **Download template** gives you a starter file.
 - Answers lock on submission; only you can reopen them.
 - Files go to a private storage bucket in per-engagement folders, served through short-lived signed links (5 minutes). The upload limit is 50 MB, and only documents, spreadsheets, slides, CSV, text and images are accepted (PDF, Word, Excel, PowerPoint, RTF, CSV, TXT, PNG, JPG, GIF, WebP, HEIC). The bucket enforces the list; the portal checks it first so people get a clear message.
 - **Admin access needs two-step sign-in** (an authenticator-app code on top of the email link). `public.is_admin()` checks the session's assurance level, and the functions check it too.
-- **Outside team members** see only the team thread, team files, shared deliverables and their own tasks, and lose access at their end date, when removed, or when the engagement is marked complete.
+- **Outside team members** see only the team thread, team files, shared deliverables, the requests they asked or were asked (and their files), and a pricing sheet they're assigned. They lose access at their end date, when removed, or when the engagement is marked complete.
+- **Pricing budgets** are readable only by you and the client. Contractors edit through database functions that check the sheet is theirs and still open, and can change only prices, quantities, units, status and notes.
+- **Alerts** are written by the database for each recipient, so nobody can read someone else's alerts or create alerts directly.
 - **The website sends strict security headers** (`.htaccess`): HTTPS only (HSTS), and a Content Security Policy that lets pages run only the site's own scripts and talk only to the Supabase project. If you add an inline script or an outside service (analytics, a map, a booking widget), the policy must allow it: run `node scripts/check-csp.mjs` and update `.htaccess`.
 - **Closing out.** On an engagement page in admin, **Mark complete** ends outside team access and leaves the client read access. **Export everything** downloads all of the engagement's records as JSON (files are listed by path; download any you need first). **Delete engagement and files** asks you to type the title, then removes the stored files and every record.
 - Clients can't change their own role. Sign-in is by one-time email link, for invited addresses only.

@@ -1,9 +1,11 @@
-// POST { kind: "message" | "deliverable" | "action_item" | "team_file", id }   (signed-in users)
+// POST { kind: "message" | "deliverable" | "action_item" | "team_file" | "request_update" | "pricing", id }   (signed-in users)
 // Emails the right people when something new lands in a client room:
 //   message, private thread  client -> Michael (with the text); Michael -> client (a nudge to read it)
 //   message, team thread     everyone else on the team who can message (a nudge, never the text)
 //   deliverable              Michael -> client
-//   action_item              whoever it's assigned to (the client, or a team member)
+//   action_item              whoever it's asked of (the client, a team member, or Michael)
+//   request_update           answered: whoever asked, and Michael; reviewed: whoever answers it
+//   pricing                  submitted: the client and Michael; reviewed: the contractor
 //   team_file                the client and Michael, whoever didn't upload it
 // Message alerts are throttled: at most one email per thread and author every 10 minutes,
 // so a burst of short messages becomes a single alert. Only sent alerts start the window.
@@ -43,7 +45,7 @@ Deno.serve(async (req) => {
   if (!caller) return json({ error: "Sign in first" }, 401);
 
   const { kind, id } = await req.json().catch(() => ({}));
-  if (typeof id !== "string" || !["message", "deliverable", "action_item", "team_file"].includes(kind)) {
+  if (typeof id !== "string" || !["message", "deliverable", "action_item", "team_file", "request_update", "pricing"].includes(kind)) {
     return json({ error: "kind and id are required" }, 400);
   }
 
@@ -114,26 +116,101 @@ Deno.serve(async (req) => {
     return json({ sent: true });
   }
 
+  // Who someone is on an engagement, for "X has asked you…" lines.
+  const nameOn = (eng: Engagement, members: Member[], uid: string | null) =>
+    !uid ? null
+      : uid === eng.client_id ? (eng.profiles.full_name || eng.profiles.email)
+      : members.find((x) => x.user_id === uid)?.full_name || members.find((x) => x.user_id === uid)?.email || null;
+  /** The email address for a person on an engagement: the client, a team member, or Michael. */
+  async function addressOf(eng: Engagement, members: Member[], uid: string | null): Promise<[string, string | null] | null> {
+    if (!uid || uid === eng.client_id) return [eng.profiles.email, eng.profiles.full_name];
+    const m = members.find((x) => x.user_id === uid);
+    if (m) return [m.email, m.full_name];
+    const { data: p } = await admin.from("profiles").select("role").eq("id", uid).single();
+    return p?.role === "admin" ? [ADMIN_EMAIL, "Michael"] : null;
+  }
+  const KIND_WORD: Record<string, string> = { task: "a to-do", document: "a document", answer: "an answer", approval: "your approval", pricing: "pricing" };
+
   if (kind === "action_item") {
-    const { data: row } = await admin.from("action_items").select("id, engagement_id, title, due_date, assignee_id, created_by").eq("id", id).single();
+    const { data: row } = await admin.from("action_items").select("id, engagement_id, title, detail, due_date, assignee_id, created_by, kind").eq("id", id).single();
     if (!row) return json({ error: "Not found" }, 404);
     const eng = await engagementOf(row.engagement_id);
     if (!eng) return json({ error: "Engagement not found" }, 404);
-    if (caller.role !== "admin" && !(caller.id === eng.client_id && row.created_by === caller.id)) return json({ error: "Not allowed" }, 403);
-    let to = eng.profiles.email, name = eng.profiles.full_name;
-    if (row.assignee_id && row.assignee_id !== eng.client_id) {
-      const m = (await activeMembers(eng.id)).find((x) => x.user_id === row.assignee_id);
-      if (!m) return json({ sent: false, reason: "assignee has no access" });
-      to = m.email; name = m.full_name;
-    } else if (caller.id === eng.client_id) {
-      return json({ sent: false, reason: "own to-do" });
-    }
-    const from = caller.role === "admin" ? "Michael" : (eng.profiles.full_name || "Your client");
+    if (caller.role !== "admin" && row.created_by !== caller.id) return json({ error: "Not allowed" }, 403);
+    const members = await activeMembers(eng.id);
+    if (row.assignee_id === caller.id || (!row.assignee_id && caller.id === eng.client_id)) return json({ sent: false, reason: "own to-do" });
+    const to = await addressOf(eng, members, row.assignee_id);
+    if (!to) return json({ sent: false, reason: "assignee has no access" });
+    const from = caller.role === "admin" ? "Michael" : nameOn(eng, members, caller.id) || "Someone on the team";
     const due = row.due_date ? ` by ${new Date(row.due_date + "T12:00:00Z").toLocaleDateString("en-US", { month: "long", day: "numeric" })}` : "";
-    await sendEmail(to, `Something for you: ${row.title}`,
-      layout("Something for you", `<p>${greet(name)}</p><p>${escapeHtml(from)} has added an item for you on <em>${escapeHtml(eng.title)}</em>${escapeHtml(due)}:</p><p><strong>${escapeHtml(row.title)}</strong></p><p>Tick it off in the portal once it's done.</p>`,
-        { label: "Open the portal", url: `${SITE_URL}/portal/` }));
+    const url = to[0] === ADMIN_EMAIL ? `${SITE_URL}/portal/admin.html#engagement=${eng.id}` : roomUrl(row.kind === "pricing" ? "pricing" : "requests");
+    await sendEmail(to[0], `${row.kind === "task" ? "Something for you" : "A request for you"}: ${row.title}`,
+      layout(row.kind === "task" ? "Something for you" : "A request for you", `<p>${greet(to[1])}</p><p>${escapeHtml(from)} has asked you for ${KIND_WORD[row.kind] ?? "something"} on <em>${escapeHtml(eng.title)}</em>${escapeHtml(due)}:</p><p><strong>${escapeHtml(row.title)}</strong></p>${row.detail ? `<p>${escapeHtml(row.detail)}</p>` : ""}<p>${row.kind === "task" ? "Tick it off in the portal once it's done." : "You can answer, and attach files, in the portal."}</p>`,
+        { label: "Open the portal", url }));
     return json({ sent: true });
+  }
+
+  // A request was answered (tell whoever asked, and Michael) or reviewed (tell whoever answers it).
+  if (kind === "request_update") {
+    const { data: row } = await admin.from("action_items").select("id, engagement_id, title, kind, status, assignee_id, created_by, submitted_by, review_note, response").eq("id", id).single();
+    if (!row) return json({ error: "Not found" }, 404);
+    const eng = await engagementOf(row.engagement_id);
+    if (!eng) return json({ error: "Engagement not found" }, 404);
+    const members = await activeMembers(eng.id);
+    const isParty = caller.role === "admin" || caller.id === eng.client_id || members.some((m) => m.user_id === caller.id);
+    if (!isParty) return json({ error: "Not allowed" }, 403);
+    const who = caller.role === "admin" ? "Michael" : nameOn(eng, members, caller.id) || "Someone on the team";
+    const send = new Map<string, string | null>();
+    if (row.status === "submitted") {
+      if (row.submitted_by !== caller.id) return json({ sent: false, reason: "not the responder" });
+      const a = await addressOf(eng, members, row.created_by); if (a && row.created_by !== caller.id) send.set(a[0], a[1]);
+      if (caller.role !== "admin") send.set(ADMIN_EMAIL, "Michael");
+      for (const [to, name] of send) {
+        await sendEmail(to, `Answered: ${row.title}`,
+          layout("A request has been answered", `<p>${greet(name)}</p><p>${escapeHtml(who)} has answered <strong>${escapeHtml(row.title)}</strong> on <em>${escapeHtml(eng.title)}</em>. Review it in the portal: accept it, or ask for changes.</p>`,
+            { label: "Review it", url: to === ADMIN_EMAIL ? `${SITE_URL}/portal/admin.html#engagement=${eng.id}` : roomUrl("requests") }));
+      }
+    } else if (row.status === "accepted" || row.status === "changes_requested") {
+      const target = row.assignee_id ?? eng.client_id;
+      if (target === caller.id) return json({ sent: false, reason: "own request" });
+      const a = await addressOf(eng, members, target);
+      if (!a) return json({ sent: false, reason: "no access" });
+      const accepted = row.status === "accepted";
+      await sendEmail(a[0], `${accepted ? "Accepted" : "Changes requested"}: ${row.title}`,
+        layout(accepted ? "Accepted, thank you" : "A change is needed", `<p>${greet(a[1])}</p><p>${escapeHtml(who)} has ${accepted ? "accepted" : "asked for changes to"} <strong>${escapeHtml(row.title)}</strong> on <em>${escapeHtml(eng.title)}</em>.</p>${row.review_note ? `<blockquote style="margin:0;padding:12px 16px;border-left:2px solid #D4B483;background:#F4F1EA">${escapeHtml(row.review_note)}</blockquote>` : ""}`,
+          { label: "Open the portal", url: a[0] === ADMIN_EMAIL ? `${SITE_URL}/portal/admin.html#engagement=${eng.id}` : roomUrl(row.kind === "pricing" ? "pricing" : "requests") }));
+      send.set(a[0], a[1]);
+    }
+    return json({ sent: send.size > 0 });
+  }
+
+  // Pricing: a submitted sheet goes to the client and Michael; a review goes to the contractor.
+  if (kind === "pricing") {
+    const { data: s } = await admin.from("sov_sheets").select("id, engagement_id, title, status, version, contractor_id, review_note").eq("id", id).single();
+    if (!s) return json({ error: "Not found" }, 404);
+    const eng = await engagementOf(s.engagement_id);
+    if (!eng) return json({ error: "Engagement not found" }, 404);
+    const members = await activeMembers(eng.id);
+    if (s.status === "submitted") {
+      if (caller.role !== "admin" && caller.id !== s.contractor_id) return json({ error: "Not allowed" }, 403);
+      const who = nameOn(eng, members, s.contractor_id) || "The contractor";
+      const html = (name: string | null) => layout("Pricing submitted", `<p>${greet(name)}</p><p>${escapeHtml(who)} has submitted pricing for <strong>${escapeHtml(s.title)}</strong> (version ${s.version}) on <em>${escapeHtml(eng.title)}</em>. It's in the Pricing tab, line by line beside the budget.</p>`,
+        { label: "Review the pricing", url: roomUrl("pricing") });
+      await sendEmail(eng.profiles.email, `Pricing submitted: ${s.title}`, html(eng.profiles.full_name));
+      if (caller.role !== "admin") await sendEmail(ADMIN_EMAIL, `Pricing submitted: ${s.title}`, html("Michael"));
+      return json({ sent: true });
+    }
+    if (s.status === "accepted" || s.status === "changes_requested") {
+      if (caller.role !== "admin" && caller.id !== eng.client_id) return json({ error: "Not allowed" }, 403);
+      const a = await addressOf(eng, members, s.contractor_id);
+      if (!a || !s.contractor_id) return json({ sent: false, reason: "no contractor" });
+      const accepted = s.status === "accepted";
+      await sendEmail(a[0], `${accepted ? "Pricing accepted" : "Changes requested"}: ${s.title}`,
+        layout(accepted ? "Your pricing is accepted" : "A change to your pricing", `<p>${greet(a[1])}</p><p>Your pricing for <strong>${escapeHtml(s.title)}</strong> on <em>${escapeHtml(eng.title)}</em> has been ${accepted ? "accepted" : "sent back with a note"}.</p>${s.review_note ? `<blockquote style="margin:0;padding:12px 16px;border-left:2px solid #D4B483;background:#F4F1EA">${escapeHtml(s.review_note)}</blockquote>` : ""}${accepted ? "" : "<p>Lines with questions are marked on the sheet. Your earlier figures are kept.</p>"}`,
+          { label: "Open the sheet", url: roomUrl("pricing") }));
+      return json({ sent: true });
+    }
+    return json({ sent: false, reason: "nothing to send" });
   }
 
   // Deliverables: only Michael shares them.
