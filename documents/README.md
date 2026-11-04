@@ -1,10 +1,10 @@
 # Sypher Solutions documents
 
-One design for every client document: feasibility reports, diligence packages, memos and financial reviews. It's modelled on the firm's September 2026 feasibility report:
-- Cormorant Garamond headings, Source Serif 4 text and Source Sans 3 tables and labels;
-- navy, teal, champagne and bronze;
-- the double-S logo;
-- a ribbon cover, a navy stats band, gold chapter numbers with teal kickers, stat cards, verdict badges and a stacked-logo closing page.
+One design for every client document: feasibility reports, diligence packages, memos and financial reviews. It uses the website's brand:
+- Cormorant Garamond headings with Jost text, labels and tables;
+- the site's navy, teal, champagne and bronze;
+- the copper-and-navy S emblem, with the wordmark set in type as in the site header;
+- a faded-emblem cover like the site's page openings, a navy stats band, italic chapter numbers with the site's eyebrow labels, stat cards, verdict badges and the stacked logo on the closing page.
 
 ```
 documents/

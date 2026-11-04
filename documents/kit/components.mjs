@@ -6,6 +6,8 @@
 
 const attr = (s) => String(s ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 const cls = (...c) => c.filter(Boolean).join(" ");
+/** The website's logo: the emblem with SYPHER / SOLUTIONS set in type. */
+const logo = (extra = "") => `<span class="${cls("logo", extra)}"><img src="img/emblem.webp" alt=""><span class="wm"><b>SYPHER</b><i>Solutions</i></span></span>`;
 /** HTML text to a CSS string body: tags dropped, entities decoded, quotes escaped. */
 const cssText = (html) => String(html).replace(/<[^>]+>/g, "").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
@@ -49,7 +51,7 @@ export function doc(d) {
 <body>
 <section class="cover">
   <img class="cover__ribbon" src="img/cover-ribbon.jpg" alt="">
-  <img class="cover__logo" src="img/logo-horizontal.webp" alt="Sypher Solutions">
+  <div class="cover__logo" aria-label="Sypher Solutions">${logo()}</div>
   <div class="cover__type"><b>${d.docType}</b><span>${d.date}</span></div>
   <div class="${cls("cover__main", d.titleSize === "xlong" && "is-xlong")}">
     <p class="cover__kicker">${d.kicker}</p>
@@ -87,14 +89,14 @@ ${(d.contents === false ? d.body.slice(1) : d.body).join("\n")}
 }
 
 /** Header and footer content. It must sit inside the first page that has them. */
-const running = () => `<div class="running-logo"><img src="img/logo-horizontal.webp" alt=""></div>
-<div class="running-wordmark"><img src="img/wordmark.webp" alt=""></div>`;
+const running = () => `<div class="running-logo">${logo()}</div>
+<div class="running-wordmark">${logo("is-text-only")}</div>`;
 const withRunning = (section, html) => section.replace(/(<section[^>]*>)/, `$1\n${html}`);
 
 function contents(d, runningHtml) {
   return `<section class="contents">
   ${runningHtml}
-  <img class="contents__logo" src="img/logo-horizontal.webp" alt="">
+  <div class="contents__logo">${logo()}</div>
   <p class="kicker">${d.short} · ${d.docType}</p>
   <h1>Contents</h1>
   <table class="toc">
@@ -113,7 +115,7 @@ export function chapter({ id, num, kicker, title, lede, body = "" }) {
   <header class="chapter-head">
     <div class="chapter-head__line"><span class="chapter-head__num">${num}</span><span class="chapter-head__kicker">${kicker}</span></div>
     <h1>${title}</h1>
-    <img class="chapter-head__divider" src="img/divider.webp" alt="">
+    <div class="chapter-head__divider"><img src="img/emblem.webp" alt=""><span></span></div>
   </header>
   ${lede ? `<p class="lede">${lede}</p>` : ""}
   ${body}
