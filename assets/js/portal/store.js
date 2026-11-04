@@ -272,11 +272,11 @@ export const store = {
   // ---- admin ----
   async clients() {
     const client = await sb();
-    return check(await client.from("profiles").select("*, engagements(*)").eq("role", "client").order("created_at", { ascending: false }));
+    return check(await client.from("profiles").select("*, engagements!engagements_client_id_fkey(*)").eq("role", "client").order("created_at", { ascending: false }));
   },
   async engagement(id) {
     const client = await sb();
-    return check(await client.from("engagements").select("*, client:profiles(*)").eq("id", id).single());
+    return check(await client.from("engagements").select("*, client:profiles!engagements_client_id_fkey(*)").eq("id", id).single());
   },
   async updateEngagement(id, fields) {
     const client = await sb();
@@ -557,7 +557,7 @@ export const store = {
   async exportEngagement(engagementId) {
     const client = await sb();
     const by = (table, extra = "*") => client.from(table).select(extra).eq("engagement_id", engagementId).then(check);
-    const engagement = check(await client.from("engagements").select("*, client:profiles(id, email, full_name, company)").eq("id", engagementId).single());
+    const engagement = check(await client.from("engagements").select("*, client:profiles!engagements_client_id_fkey(id, email, full_name, company)").eq("id", engagementId).single());
     const [assignments, milestones, decisions, messages, actionItems, deliverables, files, teamFiles, publications, drafts, activity, members, proposals] = await Promise.all([
       by("assignments"), by("milestones"), by("decisions"), by("messages"), by("action_items"), by("deliverables"), by("files"),
       by("team_files"), by("publications"), by("report_drafts"), by("activity"), by("engagement_members"),

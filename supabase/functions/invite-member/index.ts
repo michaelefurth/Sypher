@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   if (!engagementId || !EMAIL_RE.test(email)) return json({ error: "Please enter a valid email address." }, 400);
 
-  const { data: eng } = await admin.from("engagements").select("id, title, status, client_id, profiles!inner(email, full_name, company)").eq("id", engagementId).single();
+  const { data: eng } = await admin.from("engagements").select("id, title, status, client_id, profiles!engagements_client_id_fkey!inner(email, full_name, company)").eq("id", engagementId).single();
   if (!eng) return json({ error: "Engagement not found" }, 404);
   const isOwner = eng.client_id === caller.id;
   if (!isOwner && caller.role !== "admin") return json({ error: "Only the client or Michael can add people to this engagement." }, 403);
