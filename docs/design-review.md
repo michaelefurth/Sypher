@@ -80,8 +80,20 @@ One way to keep the brand but cut repetition is to use the kicker only where it 
    - Insights keeps the old opening for now.
 
    Original note: About could lead with Michael's photograph and the principal's note. Services could lead with the eight-practice strip. Solutions could lead with the search box. Work could lead with a case. That fixes the sameness and the empty band below each hero in one move. It is a layout change, so it needs your go-ahead.
-2. **Shorten the home page.** It has 15 sections; Hallmark's guide is 6 to 9. Merging the overlapping practice and solution sections would tighten it. The About page runs about 640 words. Only you should cut words.
-3. **Section heads are small next to the heroes.** On Approach and in Insights, h2s render at 30 to 37 px under a 76 px hero head, so the page loses its rhythm after the first screen. Raising section heads to about 48 to 52 px at desktop would fix it.
+2. ~~**Shorten the home page.**~~ **Done:** the home page now has 9 sections plus the footer, and is about 20% shorter.
+   - Two sections were cut because the same content is elsewhere:
+     - the practice grid, which repeated the scroll section's eight practices;
+     - "Ways to Engage", which is also on Approach. Approach's version uses its own headline.
+   - Two sections moved, word for word:
+     - "The deliverable" (the sample report) moved to Approach, after the method.
+     - "Who we serve" moved to Services, before the closing band.
+   - The Services practice bar now stops pinning at the last practice. Before, it also floated over the closing band.
+   - No words were cut; About's length is still yours to decide.
+
+   Original note: It has 15 sections; Hallmark's guide is 6 to 9. Merging the overlapping practice and solution sections would tighten it. The About page runs about 640 words. Only you should cut words.
+3. **Checked, left as is:** the "small section heads" were step names on Approach and h2s inside Insights articles. Neither is a section head; real section heads already render at about 52px.
+
+   Original note: On Approach and in Insights, h2s render at 30 to 37 px under a 76 px hero head, so the page loses its rhythm after the first screen. Raising section heads to about 48 to 52 px at desktop would fix it.
 4. **Progress bars animate `width`.** This affects the intake progress, the portal progress and the puzzle progress. Switching to `transform: scaleX()` is smoother. It needs a two-line change in the scripts that set the width.
 5. **The Services list leaves one item alone on its last row** at 1440. Change the column count or the item count.
 6. **The portal tabs on phones** scroll sideways and cut "Messages" off with no hint there's more. A soft fade at the right edge would show it.
