@@ -141,7 +141,8 @@ To stop auto-deploying, delete the cron job. Manual **Deploy HEAD Commit** keeps
 **Supabase (GitHub Actions).** `.github/workflows/deploy-supabase.yml` runs when a merge changes anything under `supabase/`: it re-runs the access tests, applies new migrations (`supabase db push`, which records each one so it runs once), then deploys every edge function with the sign-in rules in `supabase/config.toml`. The first four migrations were applied by hand before automation; the workflow records them as applied so they are never re-run. One-time setup, in GitHub → Settings → Secrets and variables → Actions → **New repository secret**:
 
 - `SUPABASE_ACCESS_TOKEN`: create one at supabase.com/dashboard/account/tokens.
-- `SUPABASE_DB_PASSWORD`: the database password (Supabase → Project Settings → Database; reset it there if you don't have it).
+
+That is the only secret it needs. The Supabase CLI is pinned to 3.0.0 and reaches the database with the token. A `SUPABASE_DB_PASSWORD` secret left over from earlier setup is unused, and you can delete it.
 
 The job runs in a GitHub environment called `production`. To approve each database change before it applies, add yourself as a required reviewer under GitHub → Settings → Environments → production. You can also run it by hand from the Actions tab (**Deploy Supabase → Run workflow**).
 
