@@ -22,7 +22,7 @@ jobs:
           npm install --no-save --no-audit --no-fund @electric-sql/pglite
           node rls-test.mjs
       - name: Scripts parse
-        run: for f in assets/js/*.js assets/js/portal/*.js scripts/*.mjs; do node --check "$f"; done
+        run: for f in assets/js/*.js assets/js/portal/*.js scripts/*.mjs documents/*.mjs documents/kit/*.mjs documents/samples/*.mjs; do node --check "$f"; done
       - name: Sign-in email templates build
         run: node supabase/templates/auth-emails.mjs payload > /dev/null
       - name: Content Security Policy matches the pages
