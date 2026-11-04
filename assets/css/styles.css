@@ -58,6 +58,7 @@
   --navy: #0B2D3B;
   --navy-deep: #071F29;
   --teal: #1E7F7A;
+  --teal-deep: #17625E; /* teal text on pale teal fills, 4.5:1 or better */
   --teal-soft: #2A9B94;
   --stone: #EAE6DF;
   --champagne: #D4B483;
@@ -73,6 +74,7 @@
   --bronze: #85663A; /* champagne darkened for text on light grounds (WCAG AA) */
   --rule: rgba(11, 45, 59, 0.14);
   --rule-strong: rgba(11, 45, 59, 0.28);
+  --field-edge: rgba(11, 45, 59, 0.55); /* form field outlines: 3:1 against paper and white (WCAG 1.4.11) */
   --on-dark: #F4F1EA;
   --on-dark-muted: rgba(244, 241, 234, 0.68);
   --rule-dark: rgba(244, 241, 234, 0.16);
@@ -631,6 +633,7 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 /* ---------- Prose (articles) ---------- */
 .prose { font-size: 1.1rem; line-height: 1.8; }
+.prose > p, .prose > ul, .prose > ol { max-width: 38rem; } /* about 70 characters a line */
 .prose h2 { font-size: clamp(1.8rem, 1.5rem + 1vw, 2.3rem); margin: 3rem 0 1.25rem; }
 .prose h3 { font-size: 1.5rem; margin: 2.25rem 0 0.75rem; }
 .prose ul, .prose ol { margin: 0 0 1.5em; padding-left: 1.25rem; }
@@ -706,7 +709,7 @@ h1, h2, h3, h4, .lede, .prose blockquote { font-kerning: normal; font-variant-li
 .chips { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 .chip { position: relative; }
 .chip input { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-.chip span { display: inline-block; padding: 0.5rem 1rem; border: 1px solid var(--rule-strong); border-radius: 999px; font-size: 0.82rem; cursor: pointer; transition: all .25s var(--ease); }
+.chip span { display: inline-block; padding: 0.5rem 1rem; border: 1px solid var(--rule-strong); border-radius: 999px; font-size: 0.82rem; cursor: pointer; transition: border-color .25s var(--ease), background-color .25s var(--ease), color .25s var(--ease); }
 .chip input:checked + span { background: var(--navy); border-color: var(--navy); color: var(--on-dark); }
 .chip input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
 .form__note { font-size: 0.85rem; color: var(--muted); }
@@ -738,7 +741,7 @@ h1, h2, h3, h4, .lede, .prose blockquote { font-kerning: normal; font-variant-li
 .dx__card { position: relative; cursor: pointer; }
 .dx__card input { position: absolute; opacity: 0; inset: 0; pointer-events: none; }
 .dx__card span { display: block; height: 100%; padding: 1rem 2.6rem 1.1rem 1.1rem; border: 1px solid var(--rule-strong); font-size: 0.9rem; line-height: 1.45; color: var(--slate); position: relative; transition: border-color .25s var(--ease), background .25s var(--ease), color .25s var(--ease), transform .25s var(--ease); }
-.dx__card span::after { content: ""; position: absolute; right: 1rem; top: 1.15rem; width: 1rem; height: 1rem; border: 1px solid var(--rule-strong); border-radius: 50%; transition: all .25s var(--ease); }
+.dx__card span::after { content: ""; position: absolute; right: 1rem; top: 1.15rem; width: 1rem; height: 1rem; border: 1px solid var(--rule-strong); border-radius: 50%; transition: border-color .25s var(--ease), background-color .25s var(--ease), box-shadow .25s var(--ease); }
 .dx__card input[type="checkbox"] + span::after { border-radius: 2px; }
 .dx__card b { display: block; font-family: var(--serif); font-weight: 500; font-size: 1.3rem; line-height: 1.2; color: var(--text-strong); margin-bottom: 0.25rem; }
 .dx__card:hover span { border-color: var(--teal); }
@@ -972,11 +975,11 @@ html.has-motion .puzzle__hint { opacity: 0.8; }
 .pindex__controls { display: grid; gap: 1.5rem; margin-bottom: 1.75rem; }
 .pindex__search { position: relative; display: block; max-width: 38rem; }
 .pindex__search svg { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 20px; height: 20px; fill: none; stroke: var(--bronze); stroke-width: 1.3; }
-.pindex__search input { width: 100%; border: 0; border-bottom: 1px solid var(--rule-strong); background: transparent; padding: 0.9rem 0 0.9rem 2.25rem; font-family: var(--serif); font-size: clamp(1.35rem, 1.1rem + 0.8vw, 1.8rem); color: var(--ink); border-radius: 0; }
+.pindex__search input { width: 100%; border: 0; border-bottom: 1px solid var(--field-edge); background: transparent; padding: 0.9rem 0 0.9rem 2.25rem; font-family: var(--serif); font-size: clamp(1.35rem, 1.1rem + 0.8vw, 1.8rem); color: var(--ink); border-radius: 0; }
 .pindex__search input::placeholder { color: var(--muted); font-style: italic; }
 .pindex__search input:focus { outline: none; border-bottom-color: var(--teal); }
 .pindex__filters { display: flex; flex-wrap: wrap; gap: 0.5rem; }
-.pfilter { appearance: none; background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 0.5rem 1rem; font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--slate); cursor: pointer; transition: all .3s var(--ease); }
+.pfilter { appearance: none; background: transparent; border: 1px solid var(--rule-strong); border-radius: 999px; padding: 0.5rem 1rem; font-size: 0.72rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--slate); cursor: pointer; transition: border-color .3s var(--ease), background-color .3s var(--ease), color .3s var(--ease); }
 .pfilter:hover { border-color: var(--navy); color: var(--navy); }
 .pfilter.is-active { background: var(--navy); border-color: var(--navy); color: var(--on-dark); }
 .pindex__count { font-size: var(--fs-xs); letter-spacing: 0.24em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem; }
@@ -1168,7 +1171,7 @@ html.has-motion .puzzle__progress { display: flex; }
 .compass__marks .compass__north { fill: var(--teal); }
 .compass__point text { font-family: var(--sans); font-size: 9.5px; font-weight: 500; letter-spacing: 2.6px; text-transform: uppercase; fill: var(--bronze); transition: fill .3s var(--ease); }
 .compass__point:hover text, .compass__point:focus-visible text { fill: var(--teal); }
-.compass__point:focus-visible { outline: none; }
+.compass__point:focus-visible { outline: 2px solid var(--teal); outline-offset: 3px; border-radius: 2px; }
 .compass__point:focus-visible text { text-decoration: underline; }
 @media (prefers-reduced-motion: no-preference) {
   .compass__bezel { transform-box: fill-box; transform-origin: center; animation: compass-turn 240s linear infinite; }
