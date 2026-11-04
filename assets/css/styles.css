@@ -1073,6 +1073,8 @@ html.has-motion .puzzle__hint { opacity: 0.8; }
 
 /* ---------- Audience: five ---------- */
 @media (min-width: 1101px) { .audience--five { grid-template-columns: repeat(5, 1fr); } }
+/* On a light surface (Services), the audience rules use the light hairline. */
+.section--serve .audience, .section--serve .audience__item + .audience__item, .section--serve .audience--five .audience__item:nth-child(even) { border-color: var(--rule); }
 @media (min-width: 561px) and (max-width: 1100px) {
   .audience--five { grid-template-columns: repeat(2, 1fr); }
   .audience--five .audience__item:nth-child(odd) { border-left: 0; padding-left: 0; }
