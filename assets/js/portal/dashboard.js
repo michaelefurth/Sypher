@@ -22,6 +22,7 @@ import { ADMIN_CONTACT } from "./config.js";
 import { esc, paragraphs, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, download, confirmDialog, promptDialog } from "./ui.js";
 import { mountSov, sovTotals, sheetPill, money, SHEET_STATUS } from "./sov.js";
 import { mountBell } from "./bell.js";
+import { mountModel, modelSummary } from "./model.js";
 
 const main = document.getElementById("main");
 const ROLES = ["Attorney", "CPA", "Bookkeeper", "Lender", "Insurance broker", "Contractor", "Architect", "Business partner", "Other"];
@@ -30,14 +31,14 @@ const SHEET_KEY = "sypher-room-sheet";
 const POLL_MS = 20000;
 const ALIASES = { overview: "home", tasks: "requests", timeline: "home" };
 
-let session, engagements = [], eng = null, room = null, pollTimer = null, bell = null, grid = null, focusReq = null, softTimer = null;
+let session, engagements = [], eng = null, room = null, pollTimer = null, bell = null, grid = null, pm = null, focusReq = null, softTimer = null;
 const unread = { private: 0, team: 0 };
 
 const isMember = () => eng?.access === "member";
 const me = () => session.user.id;
 const myMembership = () => room?.roster?.members?.find((m) => m.user_id === me());
 function tabList() {
-  const pricing = room?.sheets?.length ? [["pricing", "Pricing"]] : [];
+  const pricing = [...(room?.sheets?.length ? [["pricing", "Pricing"]] : []), ...(room?.models?.length ? [["project", "Project"]] : [])];
   if (!isMember()) {
     return [["home", "Home"], ["requests", "Requests"], ...pricing, ["documents", "Documents"], ["messages", "Messages"], ["plan", "Plan"], ["team", "Team"]];
   }
@@ -97,10 +98,10 @@ async function loadRoom() {
       mine.can_files ? store.deliverables(id) : [],
       mine.can_message ? store.teamLastRead(id, me()) : null,
     ]);
-    const [requestFiles, parties, sheets] = await Promise.all([
-      store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []),
+    const [requestFiles, parties, sheets, models] = await Promise.all([
+      store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []), store.pmModels(id).catch(() => []),
     ]);
-    room = { roster, actions, teamMessages, teamFiles, deliverables, teamLastRead: lastRead, requestFiles, parties, sheets };
+    room = { roster, actions, teamMessages, teamFiles, deliverables, teamLastRead: lastRead, requestFiles, parties, sheets, models };
     await loadPricing(room);
     store.touchMembership(id).catch(() => {});
   } else {
@@ -109,10 +110,10 @@ async function loadRoom() {
       store.actionItems(id), store.deliverables(id), store.messages(id), store.agreement(id).catch(() => null), store.activity(id, 120),
       store.roster(id).catch(() => null), store.messages(id, "team"), store.teamFiles(id).catch(() => []), store.teamLastRead(id, me()).catch(() => null),
     ]);
-    const [requestFiles, parties, sheets] = await Promise.all([
-      store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []),
+    const [requestFiles, parties, sheets, models] = await Promise.all([
+      store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []), store.pmModels(id).catch(() => []),
     ]);
-    room = { assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, teamLastRead: lastRead, requestFiles, parties, sheets };
+    room = { assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, teamLastRead: lastRead, requestFiles, parties, sheets, models };
     await loadPricing(room);
   }
   countUnread();
@@ -120,6 +121,7 @@ async function loadRoom() {
 
 /** Lines (and, owner side, the budget) for each pricing sheet, for the Home summary. */
 async function loadPricing(r) {
+  r.modelSummary = r.models?.length ? await modelSummary(r.models[0].id).catch(() => null) : null;
   r.sheetLines = new Map();
   r.budget = null;
   if (!r.sheets.length) return;
@@ -376,6 +378,7 @@ function requestCard(a) {
   const actions = [];
   if (respond && a.kind === "task") actions.push(`<button type="button" class="btn btn--navy btn--sm" data-req-done="${esc(a.id)}">Mark done</button>`);
   if (respond && a.kind === "pricing") actions.push(`<a class="btn btn--navy btn--sm" href="#pricing">Open the pricing sheet</a>`);
+  if (respond && a.link_kind === "pm_input") actions.push(`<a class="btn btn--navy btn--sm" href="#project">Set it in the project model</a>`);
   if (canReview(a)) actions.push(`<button type="button" class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button>`, `<button type="button" class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>`);
   if (a.kind === "task" && a.status === "accepted" && canRespond(a)) actions.push(`<button type="button" class="p-linkbtn" data-req-undo="${esc(a.id)}">Not done after all</button>`);
   if (a.created_by === me() && a.status === "open") actions.push(`<button type="button" class="p-linkbtn" data-task-delete="${esc(a.id)}">Remove</button>`);
@@ -387,7 +390,7 @@ function requestCard(a) {
     ${a.response ? `<div class="req__answer"><b>${esc(a.submitted_by ? personName(a.submitted_by) : "Answer")}${a.submitted_by ? " answered" : ""}</b>${paragraphs(a.response)}</div>` : ""}
     ${a.status === "accepted" && a.review_note ? `<p class="req__meta">Note: ${esc(a.review_note)}</p>` : ""}
     ${files.length ? `<ul class="req__files">${files.map(fileChip).join("")}</ul>` : ""}
-    ${respond && !["task", "pricing"].includes(a.kind) ? respondForm(a) : ""}
+    ${respond && !["task", "pricing"].includes(a.kind) && a.link_kind !== "pm_input" ? respondForm(a) : ""}
     ${actions.length ? `<div class="req__actions">${actions.join("")}</div>` : ""}
   </li>`;
 }
@@ -439,7 +442,9 @@ function attention() {
       title: a.title,
       meta: [review ? `${a.submitted_by ? personName(a.submitted_by) : askedName(a)} answered ${a.submitted_at ? relTime(a.submitted_at) : ""}` : `From ${fromName(a)}`, a.status === "changes_requested" ? "changes requested" : ""].filter(Boolean).join(" · "),
       due: dueBit(a),
-      cta: a.kind === "task" && !review ? `<button type="button" class="btn btn--ghost btn--sm" data-req-done="${esc(a.id)}">Mark done</button>` : `<a class="btn btn--navy btn--sm" href="#requests" data-goto-req="${esc(a.id)}">${review ? "Review" : "Respond"}</a>`,
+      cta: a.kind === "task" && !review ? `<button type="button" class="btn btn--ghost btn--sm" data-req-done="${esc(a.id)}">Mark done</button>`
+        : a.link_kind === "pm_input" && !review ? `<a class="btn btn--navy btn--sm" href="#project">Set it</a>`
+        : `<a class="btn btn--navy btn--sm" href="#requests" data-goto-req="${esc(a.id)}">${review ? "Review" : "Respond"}</a>`,
     });
   }
   for (const s of room.sheets.filter(sheetNeedsMe)) {
@@ -520,6 +525,21 @@ function pricingCard() {
   </section>`;
 }
 
+function projectCard() {
+  const sm = room.modelSummary;
+  if (!sm) return "";
+  const r = sm.result, y2 = r.years[1];
+  const open = sm.inputs.filter((i) => i.status !== "confirmed").length;
+  const mine = sm.inputs.filter((i) => i.owner_id === me() && i.status !== "confirmed").length;
+  return `<section class="p-card p-card--navy home-pm" aria-label="Project model"><h2 class="p-kicker">The project</h2>
+    <p class="home-pm__total">${money(r.total)}</p><p class="home-pm__sub">total project cost${r.perSf ? ` · $${Math.round(r.perSf)}/SF` : ""}</p>
+    <dl class="home-pm__figs"><div><dt>Loan</dt><dd>${money(r.loan)}</dd></div><div><dt>Equity</dt><dd>${money(r.equity)}</dd></div>
+      <div><dt>Coverage, year 2</dt><dd>${y2.dscr == null ? "—" : `${y2.dscr.toFixed(2)}×`}</dd></div></dl>
+    <p class="home-pm__open">${open ? `${open} assumption${open > 1 ? "s" : ""} still open${mine ? ` · <b>${mine} for you</b>` : ""}` : "Every assumption confirmed"}</p>
+    <a class="btn btn--gold btn--sm" href="#project">Open the model</a>
+  </section>`;
+}
+
 function recentCard() {
   const items = (room.activity || []).filter((a) => TIMELINE[a.kind]);
   if (!items.length) return "";
@@ -534,7 +554,7 @@ function viewHome() {
   if (isMember()) {
     return `<div class="p-grid">
       <div class="p-stack">${attentionCard()}${waitingCard()}</div>
-      <div class="p-stack">${newCard()}${pricingCard()}
+      <div class="p-stack">${newCard()}${projectCard()}${pricingCard()}
         ${myMembership()?.can_message ? `<section class="p-card room-msgpeek"><h2 class="p-kicker">Team thread</h2>
           ${room.teamMessages.length ? (() => { const l = room.teamMessages[room.teamMessages.length - 1]; return `<p class="room-msgpeek__who">${esc(personName(l.author_id))} · ${esc(relTime(l.created_at))}${unread.team ? ` <span class="pill pill--gold">${unread.team} new</span>` : ""}</p><p class="room-msgpeek__body">${esc(l.body.length > 180 ? `${l.body.slice(0, 180)}…` : l.body)}</p>`; })() : `<p class="p-muted">No messages yet.</p>`}
           <a class="btn btn--ghost btn--sm" href="#messages">Open the thread</a></section>` : ""}
@@ -543,8 +563,24 @@ function viewHome() {
   }
   return `<div class="p-grid">
     <div class="p-stack">${attentionCard()}${waitingCard()}${newCard()}${updatesCard()}${recentCard()}</div>
-    <div class="p-stack">${meetingCard()}${whereThingsStand()}${pricingCard()}${latestMessageCard()}${teamPeek()}${principalCard()}</div>
+    <div class="p-stack">${meetingCard()}${projectCard()}${whereThingsStand()}${pricingCard()}${latestMessageCard()}${teamPeek()}${principalCard()}</div>
   </div>`;
+}
+
+/* -------------------------------------------------------------- project */
+function viewProject() {
+  return `<div class="pm-root" id="pm-root" data-model="${esc(room.models[0].id)}"><div class="p-loading">Loading the model…</div></div>`;
+}
+async function mountProject() {
+  const root = document.getElementById("pm-root");
+  if (!root) return;
+  pm?.destroy();
+  pm = null;
+  const r = room.roster || {};
+  const people = [r.client && { id: r.client.user_id, name: `${r.client.name} (client)` }, ...(r.members || []).filter((m) => m.status === "active" && m.can_model).map((m) => ({ id: m.user_id, name: m.name }))].filter(Boolean);
+  try {
+    pm = await mountModel(root, { modelId: root.dataset.model, role: isMember() ? "viewer" : "owner", me: me(), nameOf: realName, people, pricingHref: room.sheets.length ? "#pricing" : "#project" });
+  } catch (err) { root.innerHTML = `<p class="p-empty">${esc(err.message)}</p>`; }
 }
 
 /* -------------------------------------------------------------- pricing */
@@ -565,7 +601,7 @@ async function mountPricing() {
   grid = null;
   try {
     grid = await mountSov(root, {
-      sheetId: root.dataset.sheet, role: isMember() ? "contractor" : "owner", me: me(), nameOf: realName,
+      sheetId: root.dataset.sheet, role: !isMember() ? "owner" : room.sheets.find((x) => x.id === root.dataset.sheet)?.contractor_id === me() ? "contractor" : "viewer", me: me(), nameOf: realName,
       onStatus: ({ sheet }) => {
         const s = room.sheets.find((x) => x.id === sheet.id);
         if (s && s.status !== sheet.status) { Object.assign(s, sheet); refreshTabs(); }
@@ -768,13 +804,14 @@ function peopleCard() {
     <div class="person__body">
       <p class="person__name">${esc(m.name)}</p>
       <p class="person__role">${esc([m.role_label, m.organization].filter(Boolean).join(", ") || m.email || "")}</p>
-      <p class="person__access">${esc(accessText(m))} · ${[m.can_message && "messages", m.can_files && "files", "tasks"].filter(Boolean).join(", ")}${m.last_seen_at ? ` · last in ${esc(relTime(m.last_seen_at))}` : m.status === "active" ? " · hasn’t signed in yet" : ""}</p>
+      <p class="person__access">${esc(accessText(m))} · ${[m.can_message && "messages", m.can_files && "files", m.can_model && "project model", "requests"].filter(Boolean).join(", ")}${m.last_seen_at ? ` · last in ${esc(relTime(m.last_seen_at))}` : m.status === "active" ? " · hasn’t signed in yet" : ""}</p>
     </div>
     <details class="person__manage"><summary class="p-linkbtn">Manage</summary>
       <div class="person__menu">
         ${m.status === "active" ? `
           <label class="p-check"><input type="checkbox" data-member-perm="can_message" data-member="${esc(m.id)}"${m.can_message ? " checked" : ""}> Team messages</label>
           <label class="p-check"><input type="checkbox" data-member-perm="can_files" data-member="${esc(m.id)}"${m.can_files ? " checked" : ""}> Files</label>
+          ${room.models?.length && !room.sheets.some((sh) => sh.contractor_id === m.user_id) ? `<label class="p-check"><input type="checkbox" data-member-model="${esc(m.id)}"${m.can_model ? " checked" : ""}> Project model (budget, financing, cash flow)</label>` : ""}
           <div class="btn-row" style="gap:.5rem 1rem">
             <button type="button" class="p-linkbtn" data-member-extend="${esc(m.id)}">Extend 30 days</button>
             <button type="button" class="p-linkbtn p-linkbtn--danger" data-member-revoke="${esc(m.id)}">Remove access</button>
@@ -889,7 +926,7 @@ function viewTimeline(inner = false) {
 
 /* -------------------------------------------------------------- render */
 // Opening a tab marks the alerts that point at it as seen.
-const SEEN = { requests: ["requests"], pricing: ["pricing"], documents: ["documents"], messages: ["messages"], plan: ["plan"], team: ["files"], files: ["files", "documents"] };
+const SEEN = { requests: ["requests"], pricing: ["pricing"], project: ["project"], documents: ["documents"], messages: ["messages"], plan: ["plan"], team: ["files"], files: ["files", "documents"] };
 /** The tab an alert's link opens, for this person. */
 function linkTab(link) {
   const t = isMember() ? { documents: "files", plan: "home", files: "files" }[link] || link : { files: "team" }[link] || link;
@@ -898,22 +935,25 @@ function linkTab(link) {
 
 function renderTab(focus = false) {
   const views = isMember()
-    ? { home: viewHome, requests: viewRequests, pricing: viewPricing, messages: viewMessages, files: viewMemberFiles }
-    : { home: viewHome, requests: viewRequests, pricing: viewPricing, plan: viewPlan, documents: viewDocuments, messages: viewMessages, team: viewTeam };
+    ? { home: viewHome, requests: viewRequests, pricing: viewPricing, project: viewProject, messages: viewMessages, files: viewMemberFiles }
+    : { home: viewHome, requests: viewRequests, pricing: viewPricing, project: viewProject, plan: viewPlan, documents: viewDocuments, messages: viewMessages, team: viewTeam };
   const t = tab();
   if (location.hash.slice(1) && location.hash.slice(1) !== t && ALIASES[location.hash.slice(1)]) history.replaceState(null, "", `#${t}`);
   if (t !== "pricing" && grid) { grid.destroy(); grid = null; }
+  if (t !== "project" && pm) { pm.destroy(); pm = null; }
   bell?.markSeen(eng.id, SEEN[t] || []);
   refreshTabs();
   // Stick the tabs just under the portal header, whatever height it renders at.
   const header = document.getElementById("p-header");
   if (header) document.documentElement.style.setProperty("--p-header-h", `${header.offsetHeight}px`);
   const body = document.getElementById("room-body");
-  body.classList.toggle("room-body--wide", t === "pricing");
+  body.classList.toggle("room-body--wide", t === "pricing" || t === "project");
+  if (t === "project" && pm && document.getElementById("pm-root")) return; // already showing
   if (t === "pricing" && grid && document.getElementById("sov-root")?.dataset.sheet === currentSheet()?.id) return; // already showing
   body.innerHTML = views[t]();
   scrollThreads();
   markReadIfNeeded();
+  if (t === "project") mountProject();
   if (t === "pricing") {
     // The sheet is the work: once it's drawn, bring it up under the tabs.
     mountPricing().then(() => {
@@ -966,6 +1006,7 @@ async function render() {
 async function switchTo(id) {
   try { sessionStorage.setItem(ENG_KEY, id); } catch (_) { /* ignore */ }
   grid?.destroy(); grid = null;
+  pm?.destroy(); pm = null;
   eng = engagements.find((x) => x.id === id);
   main.innerHTML = `<div class="p-loading">Loading…</div>`;
   history.replaceState(null, "", location.pathname);
@@ -998,7 +1039,7 @@ async function softReload() {
   try {
     await loadRoom();
     refreshTabs();
-    if (tab() === "pricing" || typing) return; // the grid keeps itself current; never wipe what someone is typing
+    if (tab() === "pricing" || tab() === "project" || typing) return; // the grid keeps itself current; never wipe what someone is typing
     const y = window.scrollY;
     renderTab();
     window.scrollTo(0, y);
@@ -1009,6 +1050,7 @@ async function reload() {
   await loadRoom();
   const y = window.scrollY;
   grid?.destroy(); grid = null;
+  pm?.destroy(); pm = null;
   mount();
   window.scrollTo(0, y);
 }
@@ -1129,6 +1171,16 @@ main.addEventListener("change", async (e) => {
     let note = f ? `${f.name} · ${fmtSize(f.size)}` : "";
     if (f) { try { checkFile(f); } catch (err) { note = err.message; e.target.value = ""; } }
     e.target.form.querySelector(".team-upload__name").textContent = note;
+    return;
+  }
+  const modelBox = e.target.closest("[data-member-model]");
+  if (modelBox) {
+    const m = memberById(modelBox.dataset.memberModel);
+    try {
+      await store.setMemberModel(m.id, modelBox.checked);
+      m.can_model = modelBox.checked;
+      toast(modelBox.checked ? `${m.name} can now see the project model.` : `${m.name} no longer sees the project model.`);
+    } catch (err) { modelBox.checked = !modelBox.checked; toast(err.message, true); }
     return;
   }
   const perm = e.target.closest("[data-member-perm]");

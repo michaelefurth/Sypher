@@ -736,6 +736,99 @@ export const store = {
     check(await client.from("sov_budget").upsert(row, { onConflict: "line_id" }));
   },
 
+  // ---- the project model (owner side: Michael, the client, advisers given access) ----
+  async pmModels(engagementId) {
+    const client = await sb();
+    return check(await client.from("pm_models").select("*").eq("engagement_id", engagementId).order("created_at"));
+  },
+  async pmModel(id) {
+    const client = await sb();
+    return check(await client.from("pm_models").select("*").eq("id", id).single());
+  },
+  async pmLines(modelId) {
+    const client = await sb();
+    return check(await client.from("pm_lines").select("*").eq("model_id", modelId).order("position"));
+  },
+  async pmInputs(modelId) {
+    const client = await sb();
+    return check(await client.from("pm_inputs").select("*").eq("model_id", modelId).order("position"));
+  },
+  async pmComments(modelId) {
+    const client = await sb();
+    return check(await client.from("pm_comments").select("*").eq("model_id", modelId).order("created_at"));
+  },
+  async pmInputLog(engagementId, limit = 60) {
+    const client = await sb();
+    return check(await client.from("pm_input_log").select("*").eq("engagement_id", engagementId).order("changed_at", { ascending: false }).limit(limit));
+  },
+  async pmSnapshots(modelId) {
+    const client = await sb();
+    return check(await client.from("pm_snapshots").select("id, label, created_by, created_at").eq("model_id", modelId).order("created_at", { ascending: false }));
+  },
+  async pmSnapshot(id) {
+    const client = await sb();
+    return check(await client.from("pm_snapshots").select("*").eq("id", id).single());
+  },
+  async pmSaveSnapshot(row) {
+    const client = await sb();
+    return check(await client.from("pm_snapshots").insert(row).select("id, label, created_by, created_at").single());
+  },
+  /** Set an assumption (Michael: any; others: the ones they're asked to confirm). Logged. */
+  async pmSetInput(id, value, text, status, note) {
+    const client = await sb();
+    return check(await client.rpc("pm_set_input", { input: id, p_value: value, p_text: text ?? null, p_status: status, p_note: note || null }));
+  },
+  async pmAskInput(id, who, due) {
+    const client = await sb();
+    return check(await client.rpc("pm_ask_input", { input: id, who, p_due: due || null }));
+  },
+  async pmAddComment(row) {
+    const client = await sb();
+    return check(await client.from("pm_comments").insert(row).select().single());
+  },
+  async pmDeleteComment(id) {
+    const client = await sb();
+    check(await client.from("pm_comments").delete().eq("id", id));
+  },
+  // Admin: the model's structure.
+  async pmCreateModel(fields) {
+    const client = await sb();
+    return check(await client.from("pm_models").insert(fields).select().single());
+  },
+  async pmUpdateModel(id, fields) {
+    const client = await sb();
+    check(await client.from("pm_models").update(fields).eq("id", id));
+  },
+  async pmDeleteModel(id) {
+    const client = await sb();
+    check(await client.from("pm_models").delete().eq("id", id));
+  },
+  async pmAddLines(rows) {
+    const client = await sb();
+    return check(await client.from("pm_lines").insert(rows).select());
+  },
+  async pmSaveLine(id, fields) {
+    const client = await sb();
+    return check(await client.from("pm_lines").update(fields).eq("id", id).select().single());
+  },
+  async pmDeleteLine(id) {
+    const client = await sb();
+    check(await client.from("pm_lines").delete().eq("id", id));
+  },
+  async pmAddInputs(rows) {
+    const client = await sb();
+    return check(await client.from("pm_inputs").insert(rows).select());
+  },
+  async pmUpdateInput(id, fields) {
+    const client = await sb();
+    return check(await client.from("pm_inputs").update(fields).eq("id", id).select().single());
+  },
+  /** Give (or take away) a team member's access to the project model. */
+  async setMemberModel(memberId, allow) {
+    const client = await sb();
+    check(await client.rpc("set_member_model", { member: memberId, allow }));
+  },
+
   /** Live changes. Calls onChange({ table, eventType, new, old }) for each row change the user may see.
    *  `filters` is a list of { table, filter } (filter as "column=eq.value"). Returns an unsubscribe function. */
   async subscribe(name, filters, onChange, onStatus) {

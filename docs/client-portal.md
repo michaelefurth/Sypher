@@ -40,6 +40,8 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/migrations/20261104000000_team_access.sql` | Team access for outside advisers: members, team thread, team files, task assignees |
 | `supabase/migrations/20261105000000_security_hardening.sql` | Two-step sign-in required for admin access, allowed file types, function privileges |
 | `supabase/migrations/20261106000000_action_center.sql` | Requests between anyone on an engagement, notifications (the bell), and the schedule of values (pricing sheets with an owner-only budget) |
+| `supabase/migrations/20261107000000_project_model.sql` | The project model: cost lines, assumptions with owners and a change log, comments, saved versions, and model access for advisers (never the contractor) |
+| `assets/js/portal/model-calc.js`, `assets/js/portal/model.js`, `portal/project.html` | The model's arithmetic (tested by `scripts/test-model.mjs`), its screen, and the full-width page for admin |
 | `assets/js/portal/sov.js`, `assets/js/portal/bell.js`, `portal/pricing.html` | The pricing grid (autosave, offline queue, live updates), the alerts bell, and the full-width sheet page for admin |
 | `supabase/config.toml` | Which functions need a signed-in caller, read by `supabase functions deploy` |
 | `scripts/check-csp.mjs` | Checks the site's Content Security Policy (in `.htaccess`) against every page |
@@ -56,7 +58,7 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
 | `supabase/functions/room-notify` | Signed-in users: emails the right people about a new message, document, request, answer, review, pricing submission or team file |
 | `supabase/functions/invite-member` | The client or admin: adds an attorney, CPA or other adviser to an engagement's team |
-| `supabase/tests/rls-test.mjs` | 218 automated security tests for the access rules |
+| `supabase/tests/rls-test.mjs` | 244 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
@@ -222,6 +224,28 @@ Old links still work: `#overview` and `#timeline` open Home, and `#tasks` opens 
 - **Exports:** CSV (with budget columns on the owner side only), and **Print / PDF** in the site's brand.
 - **The budget stays owner-side.** It lives in its own table, and the database returns nothing from it to the contractor, so it is never in their browser.
 
+**The project model.** One place for the whole project, linked together:
+
+- **Total project budget:** land, hard costs, contingency and escalation, soft and opening costs, and financing costs.
+  - Each line has low, base and high figures, what's committed, what's paid, a confidence, when it's paid, and its own comments.
+  - **Hard costs come live from the pricing sheet:** each line forecasts at the contractor's price once given, and at its budget until then. The contractor's overhead and profit replaces the budgeted percent once they set it.
+  - Contingency and escalation are percents of hard cost.
+- **The forecast scenario** uses the best figure for each line: paid, else committed, else the contractor's price, else the budget. Low, Base and High use the budgets.
+- **Sources and uses:** the loan (a loan-to-cost share, or a fixed amount), and equity, which is spent first. It shows the funding gap once equity available is confirmed.
+- **Cash flow:** each cost goes out at closing, over design and permits, over construction (on an S-curve), at opening, or over custom months.
+  - The loan funds the rest month by month. Interest during construction and the loan fee are worked out from those draws and the loan size, then recalculated until the total settles.
+  - After opening: the revenue ramp, EBITDA, debt service, and coverage for three years. Coverage is shown for the project and globally, with the existing businesses' normalized cash flow less owner draws, against all debt service.
+- **Assumptions:** each has a value, a status (confirmed, estimate or unknown) and the person who should confirm it.
+  - On `portal/project.html?m=<model>` you assign someone and press **Ask**: they get a request and an email, and set the value in the model's Project tab. That answers their request for you to review, and every change is logged with who, when and their note.
+  - Typing a figure into an unknown item makes it an estimate until someone confirms it.
+- **Who sees it:**
+  - you;
+  - the client;
+  - advisers given **Project model** access in Team (the client's tab or the engagement page). An accountant or a lender, for example, sees the model, the pricing sheet and its budget. They can set only the items assigned to them, and can comment on anything.
+- **The contractor never sees it:** the database refuses to give a sheet's contractor model access, and refuses to make someone with access a contractor.
+- **Creating one:** in admin, on the engagement's **Project model** card. It starts from a construction-and-loan template (the usual soft costs, contingency, escalation, loan fees, interest during construction, and the standard assumptions).
+- **Versions and exports:** save a dated version (for example, the lender package), download CSV (totals, the month-by-month schedule and the assumptions), or **Print / PDF**.
+
 **Team access (outside advisers).** The client's **Team** tab, or the **Team** card on your engagement page, adds an attorney, CPA, lender or anyone else by email:
 
 - **Access is time-limited:** 30 days, 90 days (the default) or until the engagement ends. It stops by itself at the end date, when it's removed, or when the engagement is no longer active, and the database enforces each of these. Anyone with access can be extended 30 days, have messaging or files switched off, or be removed at any time; removed or expired people can be restored.
@@ -313,7 +337,8 @@ Admin → Questionnaires → **Download template** gives you a starter file.
 - Files go to a private storage bucket in per-engagement folders, served through short-lived signed links (5 minutes). The upload limit is 50 MB, and only documents, spreadsheets, slides, CSV, text and images are accepted (PDF, Word, Excel, PowerPoint, RTF, CSV, TXT, PNG, JPG, GIF, WebP, HEIC). The bucket enforces the list; the portal checks it first so people get a clear message.
 - **Admin access needs two-step sign-in** (an authenticator-app code on top of the email link). `public.is_admin()` checks the session's assurance level, and the functions check it too.
 - **Outside team members** see only the team thread, team files, shared deliverables, the requests they asked or were asked (and their files), and a pricing sheet they're assigned. They lose access at their end date, when removed, or when the engagement is marked complete.
-- **Pricing budgets** are readable only by you and the client. Contractors edit through database functions that check the sheet is theirs and still open, and can change only prices, quantities, units, status and notes.
+- **Pricing budgets and the project model** are readable only by you, the client and advisers given model access (never a sheet's contractor). Contractors edit through database functions that check the sheet is theirs and still open, and can change only prices, quantities, units, status and notes.
+- **Model assumptions** can be changed only by you, or by the person asked to confirm each one, through a function that logs every change.
 - **Alerts** are written by the database for each recipient, so nobody can read someone else's alerts or create alerts directly.
 - **The website sends strict security headers** (`.htaccess`): HTTPS only (HSTS), and a Content Security Policy that lets pages run only the site's own scripts and talk only to the Supabase project. If you add an inline script or an outside service (analytics, a map, a booking widget), the policy must allow it: run `node scripts/check-csp.mjs` and update `.htaccess`.
 - **Closing out.** On an engagement page in admin, **Mark complete** ends outside team access and leaves the client read access. **Export everything** downloads all of the engagement's records as JSON (files are listed by path; download any you need first). **Delete engagement and files** asks you to type the title, then removes the stored files and every record.

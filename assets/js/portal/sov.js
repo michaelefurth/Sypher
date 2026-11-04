@@ -6,6 +6,7 @@
 //   owner       the client: reads the prices beside the budget, asks questions on lines,
 //               accepts the pricing or sends it back
 //   admin       Michael: everything, plus line descriptions, the budget and reopening
+//   viewer      an adviser with project-model access (an accountant): reads prices beside the budget
 //
 // Saving: each edit is queued per line and sent about half a second after typing stops (or at
 // once on leaving the cell). Only the changed fields go, so two people editing different cells
@@ -125,7 +126,8 @@ const PENDING_KEY = (id) => `sypher-sov-pending:${id}`;
  * nameOf(userId) gives a display name. Returns { destroy() }.
  */
 export async function mountSov(el, { sheetId, role, me, nameOf = () => "Someone", onStatus = () => {} }) {
-  const owner = role === "owner" || role === "admin";
+  const owner = role === "owner" || role === "admin" || role === "viewer";   // sees the budget
+  const reviewer = role === "owner" || role === "admin";                        // may question lines and accept
   const admin = role === "admin";
   let sheet, lines, budget = null, versions = [], compare = null, filter = "all", live = false, destroyed = false;
 
@@ -302,7 +304,7 @@ export async function mountSov(el, { sheetId, role, me, nameOf = () => "Someone"
         <td class="sov-c-num sov-c-var${varc > 0 ? " is-over" : varc < 0 ? " is-under" : ""}" data-var>${varc == null ? "" : esc(signed(varc))}</td>` : ""}
       <td class="sov-c-st">${cell(l, "line_status")}</td>
       <td class="sov-c-note">${cell(l, "note")}</td>
-      <td class="sov-c-act">${owner ? `<button type="button" class="sov-icon" data-ask="${esc(l.id)}" title="${l.review_note ? "Edit your question" : "Ask about this line"}" aria-label="Ask about ${esc(l.description)}">?</button>` : ""}
+      <td class="sov-c-act">${reviewer ? `<button type="button" class="sov-icon" data-ask="${esc(l.id)}" title="${l.review_note ? "Edit your question" : "Ask about this line"}" aria-label="Ask about ${esc(l.description)}">?</button>` : ""}
         ${canDelete ? `<button type="button" class="sov-icon sov-icon--del" data-del="${esc(l.id)}" title="Remove line" aria-label="Remove ${esc(l.description)}">×</button>` : ""}</td>
     </tr>`;
   }
@@ -364,7 +366,7 @@ export async function mountSov(el, { sheetId, role, me, nameOf = () => "Someone"
     const pct = t.count ? Math.round((t.answered / t.count) * 100) : 0;
     const actions = [];
     if (role === "contractor" && editable()) actions.push(`<button type="button" class="btn btn--gold btn--sm" data-submit>${sheet.version ? "Submit revised pricing" : "Submit pricing"}</button>`);
-    if (owner && sheet.status === "submitted") actions.push(`<button type="button" class="btn btn--ghost btn--sm" data-review="changes">Request changes</button>`, `<button type="button" class="btn btn--gold btn--sm" data-review="accept">Accept pricing</button>`);
+    if (reviewer && sheet.status === "submitted") actions.push(`<button type="button" class="btn btn--ghost btn--sm" data-review="changes">Request changes</button>`, `<button type="button" class="btn btn--gold btn--sm" data-review="accept">Accept pricing</button>`);
     if (admin && !["submitted", "accepted"].includes(sheet.status)) actions.push(`<button type="button" class="btn btn--ghost btn--sm" data-submit>Submit as version ${sheet.version + 1}</button>`);
     if (admin && ["submitted", "accepted"].includes(sheet.status)) actions.push(`<button type="button" class="p-linkbtn" data-reopen>Reopen for edits</button>`);
     return `<div class="sov-bar" role="region" aria-label="Totals">

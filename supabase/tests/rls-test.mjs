@@ -542,6 +542,60 @@ await asAnon(async () => {
     && await fails(`select public.submit_request('${REQ}', 'x')`) && await fails(`select public.mark_notifications_read()`));
 });
 
+// --- The project model (20261107000000_project_model) ---
+const PM = "b0000000-0000-0000-0000-000000000001", PL = "b1000000-0000-0000-0000-000000000001";
+const IN_CF = "b2000000-0000-0000-0000-000000000001", IN_RATE = "b2000000-0000-0000-0000-000000000002";
+await db.exec(`update public.engagement_members set status = 'active', can_message = true, can_files = true, expires_at = null where id in ('90000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000002')`);
+await as(ADMIN, async () => {
+  await q(`insert into public.pm_models (id, engagement_id, title, sov_sheet_id, building_sf) values ('${PM}', '${ENG_A}', 'Phase 1', '${SHEET}', 6500)`);
+  await q(`insert into public.pm_lines (id, model_id, engagement_id, grp, label, base, timing) values ('${PL}', '${PM}', '${ENG_A}', 'land', 'Land', 1033000, 'closing')`);
+  await q(`insert into public.pm_inputs (id, model_id, engagement_id, key, section, label, unit) values
+    ('${IN_CF}', '${PM}', '${ENG_A}', 'existing_cash_flow', 'Existing businesses', 'Normalized cash flow', 'usd'),
+    ('${IN_RATE}', '${PM}', '${ENG_A}', 'loan_rate', 'Financing', 'Interest rate', 'pct')`);
+});
+await as(A, async () => {
+  ok("the client sees the project model", (await rows(`select * from public.pm_models`)).length === 1 && (await rows(`select * from public.pm_lines`)).length === 1);
+  ok("the client can't change budget lines", (await rows(`update public.pm_lines set base = 1 where id = '${PL}' returning id`)).length === 0);
+  ok("the client can't set an assumption they weren't asked to confirm", await fails(`select public.pm_set_input('${IN_RATE}', 9, null, 'confirmed', null)`));
+  ok("the client can't give the contractor model access", await fails(`select public.set_member_model('90000000-0000-0000-0000-000000000004', true)`));
+  await q(`select public.set_member_model('90000000-0000-0000-0000-000000000001', true)`);
+  ok("the client can give their CPA model access", (await rows(`select (public.team_roster('${ENG_A}')->'members') m`))[0].m.some((x) => x.user_id === CPA && x.can_model));
+});
+await as(LAW, async () => {
+  ok("advisers without model access don't see it", (await rows(`select * from public.pm_models`)).length === 0 && (await rows(`select * from public.pm_inputs`)).length === 0);
+  ok("advisers without model access don't see the budget", (await rows(`select * from public.sov_budget`)).length === 0);
+  ok("advisers without model access can't comment", await fails(`insert into public.pm_comments (model_id, engagement_id, target_kind, author_id, body) values ('${PM}', '${ENG_A}', 'model', '${LAW}', 'hi')`));
+});
+await as(CT, async () => {
+  ok("the contractor never sees the model", (await rows(`select * from public.pm_models`)).length === 0 && (await rows(`select * from public.pm_lines`)).length === 0);
+  ok("the contractor still never sees the budget", (await rows(`select * from public.sov_budget`)).length === 0);
+});
+await as(ADMIN, async () => {
+  ok("someone who can see the budget can't be made the contractor", await fails(`update public.sov_sheets set contractor_id = '${CPA}' where id = '${SHEET}'`));
+  ok("Michael can't ask someone without model access to confirm", await fails(`select public.pm_ask_input('${IN_CF}', '${LAW}', null)`));
+  await q(`select public.pm_ask_input('${IN_CF}', '${CPA}', '2026-12-01')`);
+  await q(`select public.pm_set_input('${IN_RATE}', 8.5, null, 'estimate', 'From the lender term sheet')`);
+});
+ok("asking creates a request for the accountant", (await rows(`select * from public.action_items where link_kind = 'pm_input' and assignee_id = '${CPA}'`)).length === 1);
+await as(CPA, async () => {
+  ok("the accountant with access sees the model and the budget", (await rows(`select * from public.pm_inputs`)).length === 2 && (await rows(`select * from public.sov_budget`)).length === 1);
+  ok("the accountant sees the pricing sheet behind the model", (await rows(`select * from public.sov_lines`)).length === 3);
+  ok("the accountant can't change an assumption not assigned to them", await fails(`select public.pm_set_input('${IN_RATE}', 12, null, 'confirmed', null)`));
+  const v = (await rows(`select (public.pm_set_input('${IN_CF}', 412000, null, 'estimate', 'From 2025 returns, before owner draws')).value v`))[0].v;
+  ok("the accountant sets the assumption they were asked about", Number(v) === 412000);
+  ok("the accountant can't edit cost lines", (await rows(`update public.pm_lines set base = 1 returning id`)).length === 0);
+  await q(`insert into public.pm_comments (model_id, engagement_id, target_kind, target_id, target_label, author_id, body) values ('${PM}', '${ENG_A}', 'input', '${IN_RATE}', 'Interest rate', '${CPA}', 'SBA 7(a) is variable; use prime + 2.75')`);
+  ok("the accountant can comment on any item", (await rows(`select * from public.pm_comments`)).length === 1);
+  ok("the accountant sees the change log", (await rows(`select * from public.pm_input_log where input_id = '${IN_CF}'`)).length === 1);
+});
+ok("the accountant's answer moves their request to review", (await rows(`select status, response from public.action_items where link_kind = 'pm_input'`))[0].status === "submitted"
+  && /412,000/.test((await rows(`select response from public.action_items where link_kind = 'pm_input'`))[0].response));
+ok("each change is logged with who and why", (await rows(`select * from public.pm_input_log where note like 'From 2025%' and changed_by = '${CPA}'`)).length === 1);
+ok("comments alert the client and Michael, not the commenter", (await rows(`select user_id from public.notifications where kind = 'comment'`)).map((r) => r.user_id).sort().join() === [A, ADMIN].sort().join());
+ok("model alerts never reach the contractor or advisers without access", (await rows(`select * from public.notifications where kind in ('comment', 'model') and user_id in ('${CT}', '${LAW}')`)).length === 0);
+await as(B, async () => { ok("another client can't see the model", (await rows(`select * from public.pm_models`)).length === 0 && (await rows(`select * from public.pm_comments`)).length === 0); });
+await asAnon(async () => { ok("signed-out visitors can't reach the model", await fails(`select public.pm_set_input('${IN_CF}', 1, null, 'confirmed', null)`) && await fails(`select * from public.pm_models`)); });
+
 console.log(results.join("\n"));
 const failed = results.some((r) => r.startsWith("FAIL"));
 console.log(failed ? "\nSOME TESTS FAILED" : `\nALL ${results.length} TESTS PASSED`);
