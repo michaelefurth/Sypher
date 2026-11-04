@@ -70,8 +70,10 @@ The portal has its own project, **Sypher Client Portal** (ref `pswzqwmluigojvizv
 ### 2. Lock sign-in down to invited clients
 1. **Authentication → Sign In / Providers → Email:** enabled. Turn **off** "Allow new users to sign up". Clients join only by your invitation.
 2. **Authentication → URL Configuration:** set **Site URL** to `https://sypher.solutions`. Add `https://sypher.solutions/portal/**` to **Redirect URLs**.
-3. **Authentication → Emails → SMTP:** connect a sender (Resend works well; see step 4), so sign-in emails come from your domain and aren't rate-limited.
-4. Optional: in **Authentication → Emails → Templates**, restyle the "Magic link" and "Invite user" emails in your brand.
+3. **Authentication → Emails → SMTP Settings:** turn on custom SMTP. Without it, Supabase's built-in sender only delivers to members of your Supabase team, so clients never receive their sign-in links. With Resend (step 4):
+   - **Host** `smtp.resend.com`, **Port** `465`, **Username** `resend`, **Password** your Resend API key
+   - **Sender email** `portal@sypher.solutions`, **Sender name** `Sypher Solutions`
+4. The sign-in emails themselves (magic link, invitation and the rest) are branded and kept in `supabase/templates/auth-emails.mjs`. The deploy workflow sends them to Supabase, so don't edit them in the dashboard: a later deploy would replace your edits. See **Deploying**.
 
 ### 3. Create your admin account
 1. **Authentication → Users → Add user → Send invitation** to `michael@sypher.solutions`, then accept it from your inbox.
@@ -145,6 +147,8 @@ To stop auto-deploying, delete the cron job. Manual **Deploy HEAD Commit** keeps
 That is the only secret it needs. The Supabase CLI is pinned to 3.0.0 and reaches the database with the token. A `SUPABASE_DB_PASSWORD` secret left over from earlier setup is unused, and you can delete it.
 
 The job runs in a GitHub environment called `production`. To approve each database change before it applies, add yourself as a required reviewer under GitHub → Settings → Environments → production. You can also run it by hand from the Actions tab (**Deploy Supabase → Run workflow**).
+
+**Sign-in emails.** The workflow's last step sends the branded templates in `supabase/templates/auth-emails.mjs` to Supabase's Management API. It sends only the six email subjects and bodies and the link lifetime (one hour, which the emails promise); no other auth setting is touched. Every email, the portal's notifications included, uses the same brand shell in `supabase/functions/_shared/brand-email.js`. To change wording, edit `auth-emails.mjs` and merge. To look at them first, run `node supabase/templates/auth-emails.mjs preview /tmp/emails` and open the files. Each sign-in email carries a link and a 6-digit code, and the sign-in page accepts the code: some company mail filters open links to scan them, which uses the link up before the client clicks it.
 
 Write new migrations so they can't be half-applied by accident: one change per file, named `YYYYMMDDHHMMSS_what_it_does.sql`, and run the access tests before merging.
 

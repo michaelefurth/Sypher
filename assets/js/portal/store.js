@@ -181,6 +181,11 @@ export const store = {
       options: { shouldCreateUser: false, emailRedirectTo: new URL(next || "dashboard.html", location.href).href },
     }));
   },
+  /** Sign in with the 6-digit code from the sign-in email (the fallback when a mail scanner has used the link). */
+  async verifyEmailCode(email, code) {
+    const client = await sb();
+    check(await client.auth.verifyOtp({ email, token: code, type: "email" }));
+  },
   async signOut() { const client = await sb(); await client.auth.signOut(); },
 
   // ---- two-step sign-in (authenticator app); required for admin access ----

@@ -104,6 +104,9 @@ body.portal main { flex: 1; }
 .login__box .p-form { margin-top: 2rem; }
 .login__note { margin-top: 1.5rem; font-size: 0.88rem; color: var(--muted); }
 .login__sent { font-family: var(--serif); font-size: 1.3rem; color: var(--navy); }
+.login__code { margin-top: 1.75rem; padding-top: 1.75rem; border-top: 1px solid var(--rule); }
+.login__code-input { font-family: var(--serif); font-size: 1.6rem; letter-spacing: 0.4em; font-variant-numeric: lining-nums tabular-nums; max-width: 14rem; }
+.login__error { color: #9B3F2A; font-size: 0.92rem; }
 @media (max-width: 860px) { .login { grid-template-columns: 1fr; } .login__art { min-height: 280px; } }
 
 /* Questionnaire */

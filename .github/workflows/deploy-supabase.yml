@@ -78,3 +78,23 @@ jobs:
 
       - name: Deploy edge functions
         run: supabase functions deploy --use-api --yes
+
+      # The sign-in emails (magic link, invitation and the rest) live in supabase/templates/.
+      # This sends only their subjects, bodies and the link lifetime to Supabase's Management
+      # API; no other auth setting is changed. The response holds the whole auth config, so it
+      # is never printed: only Supabase's error message on failure.
+      - name: Sign-in email templates
+        run: |
+          node supabase/templates/auth-emails.mjs payload > "$RUNNER_TEMP/auth-emails.json"
+          status=$(curl -sS -o "$RUNNER_TEMP/auth-response.json" -w "%{http_code}" -X PATCH \
+            "https://api.supabase.com/v1/projects/$PROJECT_REF/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @"$RUNNER_TEMP/auth-emails.json")
+          if [ "$status" -ge 300 ]; then
+            node -e 'try { const r = require(process.argv[1]); console.log("::error::Email templates not updated (HTTP '"$status"'): " + (r.message || r.error || "no message")); } catch { console.log("::error::Email templates not updated (HTTP '"$status"')"); }' "$RUNNER_TEMP/auth-response.json"
+            rm -f "$RUNNER_TEMP/auth-response.json"
+            exit 1
+          fi
+          rm -f "$RUNNER_TEMP/auth-response.json"
+          echo "Sign-in email templates updated."
