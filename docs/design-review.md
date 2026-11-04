@@ -68,7 +68,18 @@ One way to keep the brand but cut repetition is to use the kicker only where it 
 
 ## Worth doing next, ranked
 
-1. **Give each inner page its own opening.** About could lead with Michael's photograph and the principal's note. Services could lead with the eight-practice strip. Solutions could lead with the search box. Work could lead with a case. That fixes the sameness and the empty band below each hero in one move. It is a layout change, so it needs your go-ahead.
+1. ~~**Give each inner page its own opening.**~~ **Done (follow-up change):**
+   - About opens on the portrait, and the principal's note became a two-column letter.
+   - Approach is a dark opening naming the four steps.
+   - Services sets head and lede side by side, with the practice strip on the first screen.
+   - Solutions is shorter, with the search on the first screen.
+   - Work is one wide headline.
+   - Contact puts the intake on the first screen.
+   - Hallmark's `--kept` check: every link (37/37) and script hook (59/59) is intact.
+   - The "Let's talk" label above the Contact head was dropped as redundant.
+   - Insights keeps the old opening for now.
+
+   Original note: About could lead with Michael's photograph and the principal's note. Services could lead with the eight-practice strip. Solutions could lead with the search box. Work could lead with a case. That fixes the sameness and the empty band below each hero in one move. It is a layout change, so it needs your go-ahead.
 2. **Shorten the home page.** It has 15 sections; Hallmark's guide is 6 to 9. Merging the overlapping practice and solution sections would tighten it. The About page runs about 640 words. Only you should cut words.
 3. **Section heads are small next to the heroes.** On Approach and in Insights, h2s render at 30 to 37 px under a 76 px hero head, so the page loses its rhythm after the first screen. Raising section heads to about 48 to 52 px at desktop would fix it.
 4. **Progress bars animate `width`.** This affects the intake progress, the portal progress and the puzzle progress. Switching to `transform: scaleX()` is smoother. It needs a two-line change in the scripts that set the width.

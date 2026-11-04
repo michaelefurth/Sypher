@@ -352,6 +352,59 @@ ul { margin: 0; padding: 0; list-style: none; }
 .page-hero__ribbon { position: absolute; right: -4%; top: 50%; width: min(38vw, 440px); transform: translateY(-50%); opacity: 0.12; pointer-events: none; }
 @media (max-width: 760px) { .page-hero__ribbon { display: none; } }
 
+/* Page openings: each inner page opens on its own material (design review, Nov 2026). */
+.page-hero__grid { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.6fr); gap: clamp(2.5rem, 6vw, 6rem); align-items: center; }
+@media (max-width: 860px) { .page-hero__grid { grid-template-columns: minmax(0, 1fr); } }
+
+/* About: the principal's portrait leads. */
+.page-hero--portrait { padding-block: clamp(3rem, 6vw, 5.5rem); }
+.page-hero__figure { margin: 0; justify-self: end; width: min(100%, 400px); }
+@media (max-width: 860px) { .page-hero__figure { justify-self: start; width: min(100%, 360px); } }
+.principal--letter { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); align-items: start; }
+.principal--letter .principal__quote { margin-bottom: 0; }
+.principal__body p + p { margin-top: 1.1em; }
+@media (min-width: 861px) { .principal__lead { position: sticky; top: 120px; } }
+
+.page-hero__grid .page-hero__title { max-width: 18ch; }
+
+/* Approach: a dark opening that names the four steps, running into the dark method section. */
+.page-hero--dark { background: var(--navy); color: var(--on-dark-muted); border-bottom-color: var(--rule-dark); }
+.page-hero--dark .page-hero__title { color: var(--on-dark); }
+.page-hero--dark .page-hero__title em { color: var(--champagne); }
+.page-hero--dark .lede { color: var(--on-dark-muted); }
+.page-hero--dark .eyebrow { color: var(--champagne); }
+.page-hero--dark .breadcrumb { color: var(--on-dark-muted); }
+.page-hero--dark .breadcrumb a { color: var(--champagne); text-decoration-color: rgba(212, 180, 131, 0.45); }
+.page-hero__steps { display: grid; border-top: 1px solid var(--rule-dark); }
+.page-hero__steps p { margin: 0; display: flex; align-items: baseline; gap: 1.25rem; padding-block: 0.9rem; border-bottom: 1px solid var(--rule-dark); font-family: var(--serif); font-size: var(--fs-2xl); line-height: 1.1; color: var(--on-dark); }
+.page-hero__steps span { font-family: var(--sans); font-size: var(--fs-sm); color: var(--champagne); font-variant-numeric: lining-nums tabular-nums; min-width: 2ch; }
+@media (max-width: 860px) { .page-hero__steps { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 1.5rem; } .page-hero__steps p { font-size: var(--fs-xl); } }
+
+/* Services: head and lede side by side, so the practice strip is on the first screen. */
+.page-hero--split { padding-block: clamp(3rem, 6vw, 5rem) clamp(2.5rem, 4vw, 3.5rem); }
+@media (min-width: 961px) {
+  .page-hero--split .container { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); column-gap: clamp(3rem, 6vw, 6rem); align-items: end; }
+  .page-hero--split .breadcrumb, .page-hero--split .eyebrow { grid-column: 1 / -1; }
+  .page-hero--split .page-hero__title { grid-column: 1; }
+  .page-hero--split .lede { grid-column: 2; margin-top: 0; padding-bottom: 0.6rem; }
+}
+
+/* Solutions: a short opening, so the search is on the first screen. */
+.page-hero--search { padding-block: clamp(3rem, 6vw, 5rem) clamp(1.5rem, 3vw, 2.5rem); border-bottom: 0; }
+.page-hero--search + .section--tight { padding-top: clamp(1rem, 2vw, 1.5rem); }
+
+/* Work: one wide headline, the lede set to the right beneath it. */
+.page-hero--wide { padding-block: clamp(3.5rem, 7vw, 6rem) clamp(2rem, 4vw, 3rem); border-bottom: 0; }
+.page-hero--wide + .section { padding-top: clamp(1rem, 2vw, 1.5rem); }
+.page-hero--wide .page-hero__title { font-size: var(--fs-display); line-height: 1.02; }
+@media (min-width: 961px) { .page-hero--wide .lede { margin-left: auto; margin-top: 2.5rem; } }
+
+/* Contact: the intake sits on the first screen, the head in the column beside it. */
+.contact-page { padding-top: clamp(3rem, 6vw, 5rem); }
+.contact__head { margin-bottom: clamp(2.5rem, 4vw, 3.5rem); padding-bottom: clamp(2rem, 3vw, 2.5rem); border-bottom: 1px solid var(--rule); }
+.contact__head .lede { margin-top: 1.5rem; }
+.contact__title { font-size: var(--fs-3xl); }
+
 /* ---------- Pillars ticker ---------- */
 .pillars { border-block: 1px solid var(--rule); background: var(--paper); }
 .pillars__inner { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1rem 2rem; padding-block: 1.6rem; }
