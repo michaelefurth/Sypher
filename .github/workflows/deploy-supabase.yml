@@ -9,7 +9,9 @@ name: Deploy Supabase
 #   SUPABASE_ACCESS_TOKEN  a personal access token from supabase.com/dashboard/account/tokens
 # The Supabase CLI (pinned below; 3.x) reaches the database with that token, so no database
 # password is needed. Commands that touch the database pass --remote: in CLI 3.x they target
-# a local database unless told otherwise.
+# a local database unless told otherwise. Commands that change the hosted project pass --yes:
+# CLI 3.x asks for confirmation before production writes and can't ask here. The confirmation
+# is the merge (add a required reviewer on the production environment for a second one).
 
 on:
   push:
@@ -66,13 +68,13 @@ jobs:
       # Supabase's migration history doesn't know about them. Recording them as applied stops
       # `db push` from running them again. Safe to repeat on every run.
       - name: Record the migrations applied by hand before automation
-        run: supabase migration repair --status applied 20261001000000 20261002000000 20261103000000 20261104000000 --remote
+        run: supabase migration repair --status applied 20261001000000 20261002000000 20261103000000 20261104000000 --remote --yes
 
       - name: Migrations to apply
-        run: supabase db push --dry-run --remote
+        run: supabase db push --dry-run --remote --yes
 
       - name: Apply migrations
-        run: supabase db push --remote
+        run: supabase db push --remote --yes
 
       - name: Deploy edge functions
-        run: supabase functions deploy --use-api
+        run: supabase functions deploy --use-api --yes
