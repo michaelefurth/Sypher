@@ -5,9 +5,11 @@ name: Deploy Supabase
 # deploy the edge functions. The website itself deploys separately, by cron on cPanel
 # (scripts/cpanel-autodeploy.sh).
 #
-# Needs two repository secrets (Settings → Secrets and variables → Actions):
+# Needs one repository secret (Settings → Secrets and variables → Actions):
 #   SUPABASE_ACCESS_TOKEN  a personal access token from supabase.com/dashboard/account/tokens
-#   SUPABASE_DB_PASSWORD   the database password (Supabase → Project Settings → Database)
+# The Supabase CLI (pinned below; 3.x) reaches the database with that token, so no database
+# password is needed. Commands that touch the database pass --remote: in CLI 3.x they target
+# a local database unless told otherwise.
 
 on:
   push:
@@ -34,18 +36,14 @@ jobs:
     environment: production
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Check the secrets are set
+      - name: Check the secret is set
         run: |
-          missing=0
-          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::Add the SUPABASE_ACCESS_TOKEN repository secret."; missing=1; }
-          [ -n "$SUPABASE_DB_PASSWORD" ] || { echo "::error::Add the SUPABASE_DB_PASSWORD repository secret."; missing=1; }
-          exit $missing
+          [ -n "$SUPABASE_ACCESS_TOKEN" ] || { echo "::error::Add the SUPABASE_ACCESS_TOKEN repository secret."; exit 1; }
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
@@ -57,22 +55,24 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned: a new major version changed how these commands pick their database.
+          # Raise it on purpose, after reading the CLI's release notes.
+          version: 3.0.0
 
       - name: Link the project
-        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
+        run: supabase link --project-ref "$PROJECT_REF"
 
       # The first four migrations were applied by hand in the SQL editor before automation, so
       # Supabase's migration history doesn't know about them. Recording them as applied stops
       # `db push` from running them again. Safe to repeat on every run.
       - name: Record the migrations applied by hand before automation
-        run: supabase migration repair --status applied 20261001000000 20261002000000 20261103000000 20261104000000
+        run: supabase migration repair --status applied 20261001000000 20261002000000 20261103000000 20261104000000 --remote
 
       - name: Migrations to apply
-        run: supabase db push --dry-run
+        run: supabase db push --dry-run --remote
 
       - name: Apply migrations
-        run: supabase db push
+        run: supabase db push --remote
 
       - name: Deploy edge functions
-        run: supabase functions deploy --project-ref "$PROJECT_REF" --use-api
+        run: supabase functions deploy --use-api
