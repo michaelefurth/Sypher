@@ -3,3 +3,7 @@ node_modules/
 
 # Client data never goes in the repo
 private/
+
+# Hallmark design-review working files (screenshots, records)
+.hallmark/
+**/.hallmark/
