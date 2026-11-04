@@ -82,7 +82,7 @@ export function renderChrome(session, { active = "", admin = false } = {}) {
       : `<a href="dashboard.html" ${active === "dashboard" ? 'aria-current="page"' : ""}>Overview</a>`;
     header.innerHTML = `<div class="container p-header__inner">
       <div class="p-header__brand">
-        <a class="wordmark wordmark--light" href="../index.html">${ICON}<span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span></a>
+        <a class="wordmark wordmark--light" href="../index.html" aria-label="Sypher Solutions home">${ICON}<span class="wordmark__text"><span class="wordmark__name">SYPHER</span> <span class="wordmark__sub">Solutions</span></span></a>
         <span class="p-header__label">Client Portal</span>
       </div>
       <nav class="p-header__nav" aria-label="Portal">
