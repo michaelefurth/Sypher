@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
 
   const { data: engagement } = await admin
     .from("engagements")
-    .select("id, title, profiles!inner(email, full_name)")
+    .select("id, title, profiles!engagements_client_id_fkey!inner(email, full_name)")
     .eq("id", engagement_id)
     .single();
   if (!engagement) return json({ error: "Engagement not found" }, 404);

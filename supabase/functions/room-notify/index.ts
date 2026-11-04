@@ -19,7 +19,7 @@ type Engagement = { id: string; title: string; client_id: string; profiles: { em
 type Member = { user_id: string; email: string; full_name: string | null; role_label: string | null; can_message: boolean; can_files: boolean };
 
 async function engagementOf(id: string): Promise<Engagement | null> {
-  const { data } = await admin.from("engagements").select("id, title, client_id, profiles!inner(email, full_name, company)").eq("id", id).single();
+  const { data } = await admin.from("engagements").select("id, title, client_id, profiles!engagements_client_id_fkey!inner(email, full_name, company)").eq("id", id).single();
   return data as unknown as Engagement | null;
 }
 

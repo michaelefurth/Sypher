@@ -13,8 +13,8 @@
   <link rel="preload" href="../assets/fonts/cormorant-garamond-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="../assets/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="../assets/css/styles.css?v=932b5fe307">
-  <link rel="stylesheet" href="../assets/css/portal.css?v=04e86c46bb">
-  <script type="module" src="../assets/js/portal/login.js?v=e4d84f54d6"></script>
+  <link rel="stylesheet" href="../assets/css/portal.css?v=67b6c9ad04">
+  <script type="module" src="../assets/js/portal/login.js?v=9cf05de354"></script>
 </head>
 <body class="portal">
 <main id="main" class="login">
@@ -38,6 +38,15 @@
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M1 8h13M9 3l5 5-5 5"/></svg>
         </button>
         <p class="login__sent" id="login-sent" role="status" hidden></p>
+      </form>
+
+      <form class="p-form login__code" id="code-form" novalidate hidden>
+        <div class="p-field">
+          <label for="login-code">Or enter the 6-digit code from the email</label>
+          <input class="p-input login__code-input" id="login-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+        </div>
+        <button class="btn btn--ghost" type="submit">Sign in with the code</button>
+        <p class="login__error" id="code-error" role="alert" hidden></p>
       </form>
 
       <p class="login__note">Not a client yet? <a class="accent" href="../contact.html">Book a consultation</a> · <a class="accent" href="../index.html">Back to the site</a></p>

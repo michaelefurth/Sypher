@@ -181,6 +181,11 @@ export const store = {
       options: { shouldCreateUser: false, emailRedirectTo: new URL(next || "dashboard.html", location.href).href },
     }));
   },
+  /** Sign in with the 6-digit code from the sign-in email (the fallback when a mail scanner has used the link). */
+  async verifyEmailCode(email, code) {
+    const client = await sb();
+    check(await client.auth.verifyOtp({ email, token: code, type: "email" }));
+  },
   async signOut() { const client = await sb(); await client.auth.signOut(); },
 
   // ---- two-step sign-in (authenticator app); required for admin access ----
@@ -272,11 +277,11 @@ export const store = {
   // ---- admin ----
   async clients() {
     const client = await sb();
-    return check(await client.from("profiles").select("*, engagements(*)").eq("role", "client").order("created_at", { ascending: false }));
+    return check(await client.from("profiles").select("*, engagements!engagements_client_id_fkey(*)").eq("role", "client").order("created_at", { ascending: false }));
   },
   async engagement(id) {
     const client = await sb();
-    return check(await client.from("engagements").select("*, client:profiles(*)").eq("id", id).single());
+    return check(await client.from("engagements").select("*, client:profiles!engagements_client_id_fkey(*)").eq("id", id).single());
   },
   async updateEngagement(id, fields) {
     const client = await sb();
@@ -557,7 +562,7 @@ export const store = {
   async exportEngagement(engagementId) {
     const client = await sb();
     const by = (table, extra = "*") => client.from(table).select(extra).eq("engagement_id", engagementId).then(check);
-    const engagement = check(await client.from("engagements").select("*, client:profiles(id, email, full_name, company)").eq("id", engagementId).single());
+    const engagement = check(await client.from("engagements").select("*, client:profiles!engagements_client_id_fkey(id, email, full_name, company)").eq("id", engagementId).single());
     const [assignments, milestones, decisions, messages, actionItems, deliverables, files, teamFiles, publications, drafts, activity, members, proposals] = await Promise.all([
       by("assignments"), by("milestones"), by("decisions"), by("messages"), by("action_items"), by("deliverables"), by("files"),
       by("team_files"), by("publications"), by("report_drafts"), by("activity"), by("engagement_members"),
