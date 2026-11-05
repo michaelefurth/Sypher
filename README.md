@@ -28,6 +28,7 @@ data/problems.json      The 48 problem → solution pairs (featured: true = show
 partials/               Shared header and footer
 scripts/build.mjs       Injects partials + Problem Index into every page
 docs/asset-checklist.md Assets to create next
+docs/client-portal.md   The client portal: intake, the client room, pricing sheets, the project model and the owner model
 sitemap.xml, robots.txt, site.webmanifest, favicon.ico
 ```
 
