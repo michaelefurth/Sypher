@@ -960,4 +960,8 @@ span.pm-st { display: inline-block; margin-top: 0.25rem; }
 .om-finding__body--ro { display: block; font-size: 0.92rem; }
 .om-finding__body--ro p + p { margin-top: 0.3rem; }
 .om-lbl { font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--bronze); margin-right: 0.3rem; }
+.om-table--pers td:first-child { min-width: 20rem; }
+.om-pers__detail { display: block; font-size: 0.86rem; margin-top: 0.2rem; }
+.om-pers.is-needed td:first-child { box-shadow: inset 2px 0 0 #B4533C; }
+.om-pers.is-in_progress td:first-child { box-shadow: inset 2px 0 0 var(--champagne-deep); }
 @media print { body.is-printing-sov .om-presets, body.is-printing-sov .om-del-col { display: none !important; } }

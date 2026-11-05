@@ -842,12 +842,13 @@ export const store = {
   async omBundle(modelId) {
     const client = await sb();
     const get = (t, order = "position") => client.from(t).select("*").eq("model_id", modelId).order(order).then(check);
-    const [entities, periods, adjustments, properties, components, findings, inputs, comments, snapshots] = await Promise.all([
+    const [entities, periods, adjustments, properties, components, findings, inputs, personal, comments, snapshots] = await Promise.all([
       get("om_entities"), get("om_periods"), get("om_adjustments"), get("om_properties"), get("om_components"), get("om_findings"), get("om_inputs"),
+      get("om_personal").catch(() => []),
       get("om_comments", "created_at").catch(() => []),
       client.from("om_snapshots").select("id, label, created_by, created_at").eq("model_id", modelId).order("created_at", { ascending: false }).then(check).catch(() => []),
     ]);
-    return { entities, periods, adjustments, properties, components, findings, inputs, comments, snapshots };
+    return { entities, periods, adjustments, properties, components, findings, inputs, personal, comments, snapshots };
   },
   async omInputLog(engagementId, limit = 60) {
     const client = await sb();
@@ -882,7 +883,7 @@ export const store = {
     return check(await client.from("om_snapshots").select("*").eq("id", id).single());
   },
   // Admin: the model's structure. `table` is one of om_entities, om_periods, om_adjustments,
-  // om_properties, om_components, om_findings, om_inputs.
+  // om_properties, om_components, om_findings, om_inputs, om_personal.
   async omCreateModel(fields) {
     const client = await sb();
     return check(await client.from("om_models").insert(fields).select().single());

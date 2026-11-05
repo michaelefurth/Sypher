@@ -9,7 +9,7 @@
 import { store } from "./store.js";
 import { esc, fmtDate, relTime, toast, confirmDialog, promptDialog, download } from "./ui.js";
 import { money, parseNum } from "./sov.js";
-import { calculateOwner, CATEGORIES, SEG_PRESETS, FILING, CURRENT_YEAR, bonusRate } from "./owner-calc.js";
+import { calculateOwner, CATEGORIES, SEG_PRESETS, FILING, CURRENT_YEAR, bonusRate, num } from "./owner-calc.js";
 import { modelSummary } from "./model.js";
 
 const NF1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -27,6 +27,8 @@ const ADJ_TO = [["cash_flow", "Cash flow"], ["tax", "Tax bridge"], ["both", "Bot
 const EVID = [["proposed", "Proposed"], ["evidenced", "Evidenced"], ["approved", "Approved"], ["rejected", "Rejected"]];
 const SEV = [["critical", "Critical"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]];
 const FSTAT = [["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"], ["dismissed", "Dismissed"]];
+const PCAT = [["marital", "Marital status"], ["agreement", "Marital agreements"], ["dependents", "Dependents"], ["residence", "Residence"], ["vehicle", "Vehicles"], ["account", "Bank and investment accounts"], ["debt", "Personal debts"], ["insurance", "Insurance"], ["retirement", "Retirement"], ["estate", "Estate documents"], ["tax", "Personal tax"], ["other", "Other"]];
+const PSTAT = [["current", "Current"], ["in_progress", "In progress"], ["needed", "Needed"], ["resolved", "Resolved"]];
 const UNIT_SUFFIX = { pct: "%", months: " mo", years: " yr", x: "×", sf: " SF" };
 const PERIOD_FIELDS = [["revenue", "Revenue"], ["cogs", "Cost of goods sold"], ["opex", "Operating expenses"], ["other_expense", "Other expenses"], ["net_income", "Net income (books)"], ["depreciation", "Depreciation"], ["interest", "Interest"], ["rent_related", "Rent to the owner / related party"], ["owner_comp", "Owner pay expensed"], ["tax_gross", "Gross receipts (return)"], ["tax_net", "Net profit (return)"], ["cash", "Cash"], ["total_assets", "Total assets"], ["total_liabilities", "Total liabilities"]];
 const PROP_NUM = [["cost_basis", "Cost basis (price plus closing costs)"], ["land_pct", "Land share %"], ["prior_depreciation", "Depreciation taken to date (if known)"], ["market_value", "Market value"], ["debt_balance", "Debt balance"], ["annual_debt_service", "Annual debt service"], ["annual_interest", "Annual interest"], ["annual_rent", "Annual rent"], ["annual_opex", "Annual taxes, insurance, repairs"]];
@@ -366,6 +368,29 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       <ol class="om-findings">${list.map(item).join("")}</ol>${admin ? `<p><button type="button" class="p-linkbtn" data-add-finding>+ Add a finding</button></p>` : ""}</div>`;
   }
 
+  function personal() {
+    const items = d.personal || [];
+    const groups = PCAT.filter(([k]) => items.some((i) => i.category === k));
+    const money0 = (v) => (v == null ? "—" : money(Number(v)));
+    const row = (i) => `<tr class="om-pers is-${esc(i.status)}">
+      <td>${admin ? field("om_personal", i.id, "label", i.label, { kind: "text", label: "Item" }) : `<b>${esc(i.label)}</b>`}${admin ? field("om_personal", i.id, "detail", i.detail, { kind: "area", label: "Detail" }) : i.detail ? `<span class="om-text om-pers__detail">${esc(i.detail)}</span>` : ""}${admin ? field("om_personal", i.id, "note", i.note, { kind: "text", label: "Note" }) : i.note ? `<span class="pm-sub">${esc(i.note)}</span>` : ""}</td>
+      <td class="pm-c-num">${field("om_personal", i.id, "amount", i.amount, { label: "Value" })}</td>
+      <td class="pm-c-num">${field("om_personal", i.id, "liability", i.liability, { label: "Owed" })}</td>
+      <td>${field("om_personal", i.id, "as_of", i.as_of, { kind: "date", label: "As of" })}</td>
+      <td>${admin ? field("om_personal", i.id, "status", i.status, { options: PSTAT, label: "Status" }) : `<span class="pm-st pm-st--${i.status === "resolved" || i.status === "current" ? "confirmed" : i.status === "in_progress" ? "estimate" : "unknown"}">${esc(PSTAT.find(([k]) => k === i.status)?.[1])}</span>`}</td>
+      <td>${admin ? field("om_personal", i.id, "owner_label", i.owner_label, { kind: "text", label: "Who", width: "7rem" }) : `<span class="pm-sub">${esc(i.owner_label || "")}</span>`}</td>
+      <td class="pm-c-act">${talk("model", null, i.label)}${del("om_personal", i.id, i.label)}</td></tr>`;
+    const totals = { value: items.reduce((a, i) => a + (num(i.amount) || 0), 0), owed: items.reduce((a, i) => a + (num(i.liability) || 0), 0) };
+    const needed = items.filter((i) => i.status === "needed").length;
+    return `<div data-part="personal">
+      <p class="p-muted pm-note">The owner as a person, beside the businesses: marital status and agreements, dependents, accounts, personal debts, insurance, retirement and estate documents. A lender reads these with the global cash flow; a marital agreement decides what the owner actually owns.${needed ? ` <b>${needed} item${needed > 1 ? "s" : ""} needed.</b>` : ""}</p>
+      ${items.length ? `<div class="pm-wrap"><table class="pm-table om-table om-table--pers"><thead><tr><th scope="col">Item</th><th class="pm-c-num" scope="col">Value</th><th class="pm-c-num" scope="col">Owed</th><th scope="col">As of</th><th scope="col">Status</th><th scope="col">Who</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+        ${groups.map(([k, label]) => `<tbody><tr class="pm-grp"><th scope="colgroup" colspan="7">${esc(label)}</th></tr>${items.filter((i) => i.category === k).map(row).join("")}</tbody>`).join("")}
+        <tbody><tr class="pm-total"><th scope="row">Personal items listed</th><td class="pm-c-num">${money0(totals.value)}</td><td class="pm-c-num">${money0(totals.owed)}</td><td colspan="4"></td></tr></tbody></table></div>` : `<p class="p-muted">Nothing recorded yet.</p>`}
+      ${admin ? `<p><span class="om-presets">Add: ${PCAT.map(([k, l]) => `<button type="button" class="p-linkbtn" data-add-personal="${k}">${esc(l)}</button>`).join(" ")}</span></p>` : ""}
+    </div>`;
+  }
+
   function commentsPanel() {
     if (!thread) return "";
     const list = d.comments.filter((c) => c.target_kind === thread.kind && (c.target_id || null) === (thread.id || null));
@@ -394,6 +419,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       <section class="pm-part"><h3 class="pm-h">The owner's taxes</h3>${taxes()}</section>
       <section class="pm-part"><h3 class="pm-h">Global cash flow and coverage</h3>${global()}</section>
       <section class="pm-part"><h3 class="pm-h">Assumptions</h3><p class="p-muted pm-note">Each has a status and the person who should confirm it. ${admin ? "Assign someone and press Ask: they get a request and set the value here." : "You can set the ones assigned to you; every change is logged."}</p>${assumptions()}</section>
+      <section class="pm-part"><h3 class="pm-h">Personal and marital</h3>${personal()}</section>
       <section class="pm-part"><h3 class="pm-h">Findings</h3>${findings()}</section>
       <section class="pm-part pm-foot">
         <div><h3 class="pm-h">Discussion</h3>${recent.length ? `<ul class="pm-recent">${recent.map((c) => `<li><b>${esc(c.author_id === me ? "You" : nameOf(c.author_id))}</b>${c.target_label ? ` on <button type="button" class="p-linkbtn pm-recent__on" data-talk="${esc(c.target_kind)}" data-target="${esc(c.target_id || "")}" data-label="${esc(c.target_label)}">${esc(c.target_label)}</button>` : ""}: ${esc(c.body.length > 140 ? `${c.body.slice(0, 140)}…` : c.body)} <span class="p-muted">${esc(relTime(c.created_at))}</span></li>`).join("")}</ul>` : `<p class="p-muted">Comment on any figure, property or finding with the speech-bubble button.</p>`}
@@ -407,7 +433,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
 
   /** Repaint what follows from the figures. Parts someone is typing in keep their fields and
    *  only their computed cells change. */
-  const PARTS = { kpis, open: openItems, entities, adjustments, properties, taxes, global, inputs: assumptions, findings };
+  const PARTS = { kpis, open: openItems, entities, adjustments, properties, taxes, global, inputs: assumptions, personal, findings };
   function paintDerived() {
     compute();
     const active = document.activeElement;
@@ -426,8 +452,8 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
   }
 
   /* ------------------------------------------------------------- editing */
-  const TABLES = { om_entities: "entities", om_periods: "periods", om_adjustments: "adjustments", om_properties: "properties", om_components: "components", om_findings: "findings" };
-  const NUMERIC = new Set(["revenue", "cogs", "opex", "depreciation", "interest", "rent_paid", "rent_related", "owner_comp", "other_expense", "net_income", "tax_gross", "tax_net", "cash", "total_assets", "total_liabilities", "recurring_cash_flow", "w2_wages", "ubia", "ownership_pct", "amount", "pct", "cost_basis", "land_pct", "land_value", "recovery_years", "prior_depreciation", "market_value", "debt_balance", "annual_debt_service", "annual_interest", "annual_rent", "annual_opex"]);
+  const TABLES = { om_entities: "entities", om_periods: "periods", om_adjustments: "adjustments", om_properties: "properties", om_components: "components", om_findings: "findings", om_personal: "personal" };
+  const NUMERIC = new Set(["liability", "revenue", "cogs", "opex", "depreciation", "interest", "rent_paid", "rent_related", "owner_comp", "other_expense", "net_income", "tax_gross", "tax_net", "cash", "total_assets", "total_liabilities", "recurring_cash_flow", "w2_wages", "ubia", "ownership_pct", "amount", "pct", "cost_basis", "land_pct", "land_value", "recovery_years", "prior_depreciation", "market_value", "debt_balance", "annual_debt_service", "annual_interest", "annual_rent", "annual_opex"]);
   function queue(key, fn) {
     clearTimeout(timers.get(key));
     timers.set(key, setTimeout(async () => { timers.delete(key); try { await fn(); } catch (err) { toast(`Couldn’t save: ${err.message}`, true); } }, 500));
@@ -544,6 +570,12 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
         if (p && p.seg_status === "none") { p.seg_status = "estimated"; await store.omUpdate("om_properties", pid, { seg_status: "estimated" }); }
         render(); toast("Typical split applied as an estimate. An engineering study replaces it."); return;
       }
+      if (b.dataset.addPersonal) {
+        const label = await promptDialog({ title: `Add: ${PCAT.find(([k]) => k === b.dataset.addPersonal)?.[1]}`, label: "Item", confirmLabel: "Add", required: true, multiline: false });
+        if (!label) return;
+        const [row] = await store.omInsert("om_personal", [{ ...base(), category: b.dataset.addPersonal, label, position: (d.personal?.length || 0) + 1 }]);
+        (d.personal ||= []).push(row); render(); return;
+      }
       if (b.hasAttribute("data-add-finding")) {
         const observation = await promptDialog({ title: "Add a finding", label: "What was observed", confirmLabel: "Add", required: true });
         if (!observation) return;
@@ -586,7 +618,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       if (b.hasAttribute("data-snapshot")) {
         const label = await promptDialog({ title: "Save a version", label: "Name", value: `${fmtDate(new Date().toISOString(), { month: "short", day: "numeric" })}: review`, confirmLabel: "Save", required: true, multiline: false });
         if (!label) return;
-        const data = { result: snapshotOf(result), inputs: d.inputs, entities: d.entities, periods: d.periods, adjustments: d.adjustments, properties: d.properties, components: d.components, findings: d.findings };
+        const data = { result: snapshotOf(result), inputs: d.inputs, entities: d.entities, periods: d.periods, adjustments: d.adjustments, properties: d.properties, components: d.components, findings: d.findings, personal: d.personal };
         d.snapshots.unshift(await store.omSaveSnapshot({ ...base(), label, data, created_by: me })); render(); toast("Version saved."); return;
       }
       if (b.hasAttribute("data-csv")) { download(`${slug(model.title)}-owner-model.csv`, toCsv(result, d, model.title), "text/csv"); return; }
@@ -617,7 +649,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
 
   await load();
   render();
-  const filters = ["om_entities", "om_periods", "om_adjustments", "om_properties", "om_components", "om_findings", "om_inputs", "om_comments"].map((table) => ({ table, filter: `model_id=eq.${modelId}` }));
+  const filters = ["om_entities", "om_periods", "om_adjustments", "om_properties", "om_components", "om_findings", "om_inputs", "om_personal", "om_comments"].map((table) => ({ table, filter: `model_id=eq.${modelId}` }));
   if (model.pm_model_id) filters.push({ table: "pm_inputs", filter: `model_id=eq.${model.pm_model_id}` });
   store.subscribe(`om-${modelId}`, filters, (ev) => (ev.table === "pm_inputs" ? reloadSoon() : onRemote(ev)), (status) => {
     live = status === "SUBSCRIBED";
@@ -656,6 +688,8 @@ function toCsv(r, d, title) {
   if (g.withProject) rows.push(["Coverage with the project", g.withProject.dscr.toFixed(2)]);
   rows.push([], ["Assumption", "Value", "Status"]);
   for (const i of d.inputs || []) rows.push([i.label, i.unit === "text" ? i.text_value || "" : i.value ?? "", i.status]);
+  rows.push([], ["Personal item", "Category", "Value", "Owed", "Status"]);
+  for (const i of d.personal || []) rows.push([i.label, i.category, i.amount ?? "", i.liability ?? "", i.status]);
   rows.push([], ["Finding", "Severity", "Status", "Observation", "Owner"]);
   for (const f of d.findings || []) rows.push([f.ref, f.severity, f.status, f.observation, f.owner_label]);
   return rows.map((row) => row.map(cellCsv).join(",")).join("\r\n");
