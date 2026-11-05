@@ -25,3 +25,10 @@ verify_jwt = false
 
 [functions.proposal-response]
 verify_jwt = false
+
+[functions.billing]
+verify_jwt = true
+
+# Called by Stripe, not the portal: the Stripe-Signature header is verified instead.
+[functions.stripe-webhook]
+verify_jwt = false

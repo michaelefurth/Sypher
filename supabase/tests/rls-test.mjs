@@ -665,6 +665,32 @@ await as(CT, async () => { ok("the contractor never sees the personal items", (a
 await as(B, async () => { ok("another client can't see the owner model", (await rows(`select * from public.om_models`)).length === 0 && (await rows(`select * from public.om_comments`)).length === 0 && (await rows(`select * from public.om_personal`)).length === 0); });
 await asAnon(async () => { ok("signed-out visitors can't reach the owner model", await fails(`select public.om_set_input('${OI_DRAWS}', 1, null, 'confirmed', null)`) && await fails(`select * from public.om_models`)); });
 
+// --- Billing with Stripe (20261110000000_billing) ---
+await as(ADMIN, async () => {
+  await q(`insert into public.billing_profiles (client_id, stripe_customer_id, billing_name, line1, city, state, postal_code) values ('${A}', 'cus_test_a', 'Client A LLC', '1 Main St', 'El Paso', 'TX', '79901')`);
+  await q(`insert into public.invoices (engagement_id, client_id, stripe_invoice_id, kind, description, status, total, tax) values ('${ENG_A}', '${A}', 'in_test_open', 'deposit', 'Deposit', 'open', 541250, 41250), ('${ENG_A}', '${A}', 'in_test_draft', 'milestone', 'Milestone 2', 'draft', 100000, 0), ('${ENG_B}', '${B}', 'in_test_b', 'one_off', 'B fee', 'open', 5000, 0)`);
+  ok("an invoice kind must be a known one", await fails(`insert into public.invoices (engagement_id, stripe_invoice_id, kind) values ('${ENG_A}', 'in_bad', 'gift')`));
+  ok("an invoice status must be a Stripe status", await fails(`insert into public.invoices (engagement_id, stripe_invoice_id, status) values ('${ENG_A}', 'in_bad2', 'pending')`));
+  ok("a Stripe invoice is mirrored once", await fails(`insert into public.invoices (engagement_id, stripe_invoice_id) values ('${ENG_A}', 'in_test_open')`));
+  ok("Michael sees every invoice, drafts included", (await rows(`select * from public.invoices`)).length === 3);
+  ok("Michael can't read or write the processed webhook events (server only)", (await rows(`select * from public.stripe_events`)).length === 0 && await fails(`insert into public.stripe_events (id, type) values ('evt_x', 'invoice.paid')`));
+});
+await as(A, async () => {
+  const inv = await rows(`select stripe_invoice_id from public.invoices`);
+  ok("the client sees their engagement's sent invoices, not drafts or other clients'", inv.length === 1 && inv[0].stripe_invoice_id === "in_test_open");
+  ok("the client sees their own billing profile", (await rows(`select * from public.billing_profiles`)).length === 1);
+  ok("the client can't create, change or delete invoices", await fails(`insert into public.invoices (engagement_id, stripe_invoice_id) values ('${ENG_A}', 'in_forged')`) && (await rows(`update public.invoices set status = 'paid' returning id`)).length === 0 && (await rows(`delete from public.invoices returning id`)).length === 0);
+  ok("the client can't write their billing profile or Stripe customer id directly", (await rows(`update public.billing_profiles set stripe_customer_id = 'cus_forged' returning client_id`)).length === 0 && await fails(`insert into public.billing_profiles (client_id) values ('${B}')`));
+  ok("the client can't read processed webhook events", (await rows(`select * from public.stripe_events`)).length === 0);
+});
+await as(B, async () => {
+  const inv = await rows(`select stripe_invoice_id from public.invoices`);
+  ok("another client sees only their own invoices and no one else's billing profile", inv.length === 1 && inv[0].stripe_invoice_id === "in_test_b" && (await rows(`select * from public.billing_profiles`)).length === 0);
+});
+await as(CPA, async () => { ok("an accountant on the team never sees billing", (await rows(`select * from public.invoices`)).length === 0 && (await rows(`select * from public.billing_profiles`)).length === 0); });
+await as(CT, async () => { ok("the contractor never sees billing", (await rows(`select * from public.invoices`)).length === 0 && (await rows(`select * from public.billing_profiles`)).length === 0); });
+await asAnon(async () => { ok("signed-out visitors can't reach billing", await fails(`select * from public.invoices`) || (await rows(`select * from public.invoices`)).length === 0); });
+
 console.log(results.join("\n"));
 const failed = results.some((r) => r.startsWith("FAIL"));
 console.log(failed ? "\nSOME TESTS FAILED" : `\nALL ${results.length} TESTS PASSED`);

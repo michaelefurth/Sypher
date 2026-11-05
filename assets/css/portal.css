@@ -1067,3 +1067,31 @@ span.pm-st { display: inline-block; margin-top: 0.25rem; }
 .sov-c-unit { min-width: 4.2rem; }
 .sov-c-st { min-width: 7.4rem; }
 .pm-table td.pm-c-act { min-width: 5.4rem; }
+
+/* Room and admin: layout fixes from the three-view audit */
+.req-page { margin-inline: auto; }
+.wait-group__who { flex-wrap: wrap; row-gap: 0.1rem; }
+.wait-group__who b, .wait-group__who strong { white-space: nowrap; }
+.req-ask > summary { white-space: nowrap; }
+.msg__body a, .req__answer a, .room-update-item a { color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+/* On a narrow screen the tab strip fades at its right edge, a hint that it scrolls sideways */
+@media (max-width: 900px) {
+  .room-tabs__inner { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); padding-right: 2.5rem; }
+}
+
+/* ---- Billing: invoices in the room and in admin ---- */
+.inv-list { list-style: none; margin: 0 0 1rem; padding: 0; }
+.inv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.5rem 1rem; align-items: start; padding: 0.9rem 0; border-top: 1px solid var(--rule); }
+.inv-list > .inv:first-child { border-top: 0; }
+.inv__body { min-width: 0; }
+.inv__title { font-family: var(--serif); font-size: 1.15rem; line-height: 1.3; color: var(--text-strong); overflow-wrap: anywhere; }
+.inv__meta { font-size: 0.85rem; color: var(--muted); margin-top: 0.2rem; font-variant-numeric: lining-nums tabular-nums; }
+.inv__meta .is-late, .inv.is-late .inv__meta .is-late { color: #9B3F2A; font-weight: 600; }
+.inv__acts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
+.inv__acts:empty { display: none; }
+.inv__err { grid-column: 1 / -1; font-size: 0.85rem; color: #9B3F2A; }
+.bill-addr { line-height: 1.55; overflow-wrap: anywhere; }
+.inv-lines { display: grid; gap: 0.6rem; }
+.inv-line { display: grid; grid-template-columns: minmax(0, 1fr) 7rem 9.5rem; gap: 0.6rem; align-items: end; }
+@media (max-width: 640px) { .inv-line { grid-template-columns: 1fr 1fr; } .inv-line > :first-child { grid-column: 1 / -1; } }
+.inv-total { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.9rem; }

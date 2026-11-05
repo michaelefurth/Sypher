@@ -61,7 +61,9 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/publish-update` | Admin-only: publishes your approved update, emails the client |
 | `supabase/functions/room-notify` | Signed-in users: emails the right people about a new message, document, request, answer, review, pricing submission or team file |
 | `supabase/functions/invite-member` | The client or admin: adds an attorney, CPA or other adviser to an engagement's team |
-| `supabase/tests/rls-test.mjs` | 244 automated security tests for the access rules |
+| `supabase/functions/billing` | Admin: creates and sends Stripe invoices with sales tax, voids or refreshes them. The client or admin: saves the billing address |
+| `supabase/functions/stripe-webhook` | Public, signature-checked: keeps invoices current when Stripe reports a payment, failure, refund or credit |
+| `supabase/tests/rls-test.mjs` | 287 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
@@ -352,6 +354,52 @@ Admin → Questionnaires → **Download template** gives you a starter file.
 
 ---
 
+## Billing with Stripe
+
+Invoices for an engagement (a deposit, a milestone, a retainer or a one-off fee) are created in the portal and sent by Stripe. Stripe Tax adds any sales tax, and the client pays by card or bank account on Stripe's hosted invoice page. Stripe is the record; the portal keeps a copy of each invoice so both sides see it.
+
+**How it works.**
+- **Admin → engagement → Billing.** Add the client's billing address, or let the client add it in their own Billing tab. Stripe Tax needs it to work out tax. Then use **New invoice**: choose a kind, a memo, the days until it's due (15 by default), and up to three lines. Each line has an amount before tax and a tax category: *Consulting* (`txcd_20060048`), *Accounting* (`txcd_20060001`, for bookkeeping and forensic work) or *General services*. **Create and send** does the following:
+  - makes the client a Stripe customer the first time;
+  - creates the invoice, linked to the engagement in its metadata;
+  - finalizes it, which is when Stripe calculates the tax;
+  - has Stripe email it.
+
+  Each step uses an idempotency key, so a double click or a retry never bills twice. If a step fails, the half-made draft is deleted.
+- **The client's room → Billing** lists what's due, with a **Pay** button that opens Stripe's page, a PDF and a receipt once paid. Open invoices also appear under *Needs your attention* on Home. When Stripe reports the payment, the room updates live and says thank you.
+- **Webhooks** (`stripe-webhook`) keep each invoice's status, amounts paid, refunds and credits current, and add the event to the engagement's activity. You're emailed when an invoice is paid, when a payment fails, and when a bank transfer arrives that Stripe couldn't match to an invoice. Every delivery's signature is checked, and each event is applied once.
+- **Who sees what.** Only you and the client see billing. Team members never do, and a client never sees a draft.
+- **Void** cancels an open invoice; send a new one if the amount was wrong. **Refresh from Stripe** re-reads an invoice if a webhook was missed. Refunds and credit notes are issued in the Stripe Dashboard and show in the portal on their own.
+
+**One-time setup.** Use a sandbox (test mode) first, then repeat in live mode.
+
+1. **Stripe Tax** (Dashboard → Tax):
+   - Set the **head office address**, the business address Stripe uses as the origin.
+   - Add a **registration** for each state where you collect sales tax. Texas taxes many data-processing and some consulting services, so decide with your CPA whether to register there.
+   - Stripe calculates tax only where you're registered. Elsewhere invoices show no tax, and the monitoring page tells you when you near another state's threshold.
+2. **Invoice settings** (Dashboard → Settings → Billing → Invoices):
+   - Set the number prefix (for example `SYP`), the footer and your logo and colors (Settings → Branding).
+   - Turn on **reminders** for unpaid and overdue invoices.
+   - Choose the payment methods offered on the invoice page: card, ACH Direct Debit (US bank account) and, for large invoices, bank transfer.
+3. **Keys.** Create a **restricted key** with write access to Customers, Invoices and Invoice items and read access to Charges. If a call is refused, the function log names the missing permission. Then, from the repo root:
+   ```sh
+   supabase secrets set STRIPE_SECRET_KEY=rk_test_...   # rk_live_... in production
+   ```
+4. **Webhook** (Dashboard → Developers → Webhooks → Add endpoint):
+   - URL: `https://<project-ref>.supabase.co/functions/v1/stripe-webhook`
+   - Events: `invoice.finalized`, `invoice.sent`, `invoice.updated`, `invoice.paid`, `invoice.payment_failed`, `invoice.voided`, `invoice.marked_uncollectible`, `charge.refunded`, `credit_note.created` and `cash_balance.funds_available`.
+   - Copy the endpoint's signing secret, then:
+   ```sh
+   supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_...
+   ```
+5. **Try it in the sandbox.**
+   - Create a test engagement and send yourself an invoice.
+   - Pay it with card `4242 4242 4242 4242`, or with the test bank account.
+   - Check that the invoice turns *Paid* in both portals and that the payment email arrives.
+   - Dashboard → Webhooks shows every delivery and its response.
+
+Until `STRIPE_SECRET_KEY` is set, the Billing tabs still show addresses, and creating an invoice says Stripe isn't connected yet.
+
 ## Security model
 
 - **Prospects can't read anything.** Diagnostics are written by the `submit-inquiry` function with the service role; the table is admin-only.
@@ -367,7 +415,7 @@ Admin → Questionnaires → **Download template** gives you a starter file.
 - **The website sends strict security headers** (`.htaccess`): HTTPS only (HSTS), and a Content Security Policy that lets pages run only the site's own scripts and talk only to the Supabase project. If you add an inline script or an outside service (analytics, a map, a booking widget), the policy must allow it: run `node scripts/check-csp.mjs` and update `.htaccess`.
 - **Closing out.** On an engagement page in admin, **Mark complete** ends outside team access and leaves the client read access. **Export everything** downloads all of the engagement's records as JSON (files are listed by path; download any you need first). **Delete engagement and files** asks you to type the title, then removes the stored files and every record.
 - Clients can't change their own role. Sign-in is by one-time email link, for invited addresses only.
-- The service-role key and the Anthropic and Resend keys live only in Supabase function secrets, never in the browser.
+- The service-role key and the Anthropic, Resend and Stripe keys live only in Supabase function secrets, never in the browser. The portal never handles card or bank details: clients pay on Stripe's own page.
 - Re-run the access tests after any schema change (GitHub runs them, the script checks, the policy check and the build check on every push):
   ```sh
   cd supabase/tests && npm i @electric-sql/pglite && node rls-test.mjs

@@ -10,9 +10,13 @@ export function esc(value) {
 }
 
 /** Escape, then turn blank lines into paragraphs and single newlines into <br>. */
+/** Web addresses in already-escaped text become links (opened in a new tab). */
+const linkify = (html) => html.replace(/\bhttps?:\/\/[^\s<]+[^\s<.,;:!?)\]'"]/g, (u) => `<a href="${u}" target="_blank" rel="noopener noreferrer">${u}</a>`);
 export function paragraphs(text) {
-  return String(text ?? "").trim().split(/\n{2,}/).map((p) => `<p>${esc(p).replace(/\n/g, "<br>")}</p>`).join("");
+  return String(text ?? "").trim().split(/\n{2,}/).map((p) => `<p>${linkify(esc(p)).replace(/\n/g, "<br>")}</p>`).join("");
 }
+/** A file name that can break after _ - and . instead of mid-word. */
+export const fileLabel = (name) => esc(name).replace(/([_.-])(?=\S)/g, "$1<wbr>");
 
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));

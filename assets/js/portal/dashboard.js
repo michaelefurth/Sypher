@@ -19,7 +19,7 @@
 // routes, so the back button and email links work.
 import { store, FILE_ACCEPT, checkFile } from "./store.js";
 import { ADMIN_CONTACT } from "./config.js";
-import { esc, paragraphs, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, toastNotice, download, confirmDialog, promptDialog } from "./ui.js";
+import { esc, paragraphs, fileLabel, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, toastNotice, download, confirmDialog, promptDialog } from "./ui.js";
 import { mountSov, sovTotals, sheetPill, money, SHEET_STATUS } from "./sov.js";
 import { mountBell } from "./bell.js";
 import { mountModel, modelSummary } from "./model.js";
@@ -41,7 +41,7 @@ const myMembership = () => room?.roster?.members?.find((m) => m.user_id === me()
 function tabList() {
   const pricing = [...(room?.sheets?.length ? [["pricing", "Pricing"]] : []), ...(room?.models?.length ? [["project", "Project"]] : []), ...(room?.owners?.length ? [["owner", "Books and tax"]] : [])];
   if (!isMember()) {
-    return [["home", "Home"], ["requests", "Requests"], ...pricing, ["documents", "Documents"], ["messages", "Messages"], ["plan", "Plan"], ["team", "Team"]];
+    return [["home", "Home"], ["requests", "Requests"], ...pricing, ["documents", "Documents"], ["billing", "Billing"], ["messages", "Messages"], ["plan", "Plan"], ["team", "Team"]];
   }
   const m = myMembership() || {};
   return [["home", "Home"], ["requests", "Requests"], ...pricing, ...(m.can_message ? [["messages", "Messages"]] : []), ...(m.can_files ? [["files", "Files"]] : [])];
@@ -116,7 +116,8 @@ async function loadRoom() {
     const [requestFiles, parties, sheets, models, owners] = await Promise.all([
       store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []), store.pmModels(id).catch(() => []), store.omModels(id).catch(() => []),
     ]);
-    room = { assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, teamLastRead: lastRead, requestFiles, parties, sheets, models, owners };
+    const [invoices, billing] = await Promise.all([store.invoices(id).catch(() => []), store.billingProfile(me()).catch(() => null)]);
+    room = { assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, teamLastRead: lastRead, requestFiles, parties, sheets, models, owners, invoices, billing };
     await loadPricing(room);
   }
   countUnread();
@@ -192,6 +193,7 @@ function tabs() {
     if (k === "home") { const n = attention().length; return n ? soft(n, "need you") : ""; }
     if (k === "requests") { const n = room.actions.filter(needsMe).length; return n ? strong(n, "for you") : ""; }
     if (k === "pricing") { const n = room.sheets.filter(sheetNeedsMe).length; return n ? strong(n, "to act on") : ""; }
+    if (k === "billing") { const n = openInvoices().length; return n ? strong(n, "to pay") : ""; }
     const alerts = (links) => (bell ? links.reduce((sum, l) => sum + bell.unread(eng.id, l).length, 0) : 0);
     if (k === "documents") { const n = alerts(["documents"]); return n ? strong(n, "new") : ""; }
     if (k === "plan") { const n = alerts(["plan"]); return n ? soft(n, "new") : ""; }
@@ -357,7 +359,7 @@ function dueBit(a) {
 
 function fileChip(f) {
   return `<li><button type="button" class="req__file" data-open-file="${esc(f.path)}" title="${esc(personName(f.uploaded_by))} · ${esc(relTime(f.created_at))}">
-    <span aria-hidden="true">${ext(f.name)}</span>${esc(f.name)}${f.size ? ` <small>${esc(fmtSize(f.size))}</small>` : ""}</button>
+    <span aria-hidden="true">${ext(f.name)}</span>${fileLabel(f.name)}${f.size ? ` <small>${esc(fmtSize(f.size))}</small>` : ""}</button>
     ${f.uploaded_by === me() && a11yRemovable(f) ? `<button type="button" class="p-linkbtn" data-req-file-delete="${esc(f.id)}" aria-label="Remove ${esc(f.name)}">Remove</button>` : ""}</li>`;
 }
 const a11yRemovable = (f) => { const a = room.actions.find((x) => x.id === f.request_id); return a && a.status !== "accepted"; };
@@ -469,6 +471,11 @@ function attention() {
       const p = asg.progress, done = p.answered + p.unknown;
       out.push({ kind: "Questions", tone: "teal", title: asg.questionnaire?.title || "Questionnaire", meta: `${done} of ${p.total} answered`, due: asg.due_date ? `<span class="req__due${overdue(asg.due_date) ? " is-late" : ""}">Due ${esc(dueText(asg.due_date))}</span>` : "",
         cta: `<a class="btn btn--navy btn--sm" href="questionnaire.html?a=${encodeURIComponent(asg.id)}">${done ? "Continue" : "Begin"}</a>` });
+    }
+    for (const inv of openInvoices()) {
+      out.push({ kind: "Invoice", tone: overdue(inv.due_date) ? "rust" : "gold", title: `${inv.description || "Invoice"}${inv.number ? ` (${inv.number})` : ""}`,
+        meta: `${usd(inv.amount_remaining ?? inv.total)} due`, due: inv.due_date ? `<span class="req__due${overdue(inv.due_date) ? " is-late" : ""}">Due ${esc(dueText(inv.due_date))}</span>` : "",
+        cta: inv.hosted_invoice_url ? `<a class="btn btn--navy btn--sm" href="${esc(inv.hosted_invoice_url)}" target="_blank" rel="noopener">Pay</a>` : `<a class="btn btn--ghost btn--sm" href="#billing">View</a>` });
     }
     if (unread.private) out.push({ kind: "Message", tone: "navy", title: `${unread.private} new message${unread.private > 1 ? "s" : ""} from ${ADMIN_CONTACT.name.split(" ")[0]}`, meta: "", due: "", cta: `<a class="btn btn--ghost btn--sm" href="#messages">Read</a>` });
   }
@@ -656,7 +663,7 @@ async function mountPricing() {
 function deliverableRow(d, { badge = false } = {}) {
   return `<li class="doc">
     <span class="doc__icon" aria-hidden="true">${ext(d.name)}</span>
-    <div class="doc__body"><p class="doc__title">${esc(d.title || d.name)}${badge && d.shared_with_team ? ` <span class="pill pill--teal">Shared with team</span>` : ""}</p>
+    <div class="doc__body"><p class="doc__title">${fileLabel(d.title || d.name)}${badge && d.shared_with_team ? ` <span class="pill pill--teal">Shared with team</span>` : ""}</p>
       ${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
       <p class="doc__meta">${esc(fmtDate(d.created_at, { month: "short", day: "numeric", year: "numeric" }))}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}</p></div>
     <button type="button" class="btn btn--ghost btn--sm" data-open-file="${esc(d.path)}" aria-label="Open ${esc(d.title || d.name)}">Open</button>
@@ -717,6 +724,53 @@ function groupedDeliverables(list, emptyText) {
   return groups.map((g) => `<div class="doc-group"><h3 class="room-sub">${esc(g.title)}</h3><ul class="doc-list">${g.items.map((d) => deliverableRow(d, { badge: !isMember() })).join("")}</ul></div>`).join("");
 }
 
+/* -------------------------------------------------------------- billing */
+/** Invoice amounts are in cents; shown to the cent. */
+const usd = (cents) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((cents ?? 0) / 100);
+const INVOICE_STATUS = { open: ["Due", "pill--gold"], paid: ["Paid", "pill--navy"], void: ["Cancelled", ""], uncollectible: ["Written off", ""] };
+const openInvoices = () => (isMember() ? [] : (room.invoices || []).filter((i) => i.status === "open" && (i.amount_remaining ?? 1) > 0));
+function invoiceRow(inv) {
+  const [label, cls] = INVOICE_STATUS[inv.status] || [inv.status, ""];
+  const late = inv.status === "open" && overdue(inv.due_date);
+  const tax = Number(inv.tax || 0);
+  return `<li class="inv${late ? " is-late" : ""}">
+    <div class="inv__body"><p class="inv__title">${esc(inv.description || "Invoice")}${inv.number ? ` <span class="p-muted">${esc(inv.number)}</span>` : ""}</p>
+      <p class="inv__meta">${usd(inv.total)}${tax ? ` <span class="p-muted">including ${usd(tax)} sales tax</span>` : ""}
+        · ${inv.status === "paid" ? `paid ${esc(fmtDate(inv.paid_at, { month: "short", day: "numeric", year: "numeric" }))}` : inv.due_date ? `<span class="${late ? "is-late" : ""}">due ${esc(fmtDate(inv.due_date, { month: "short", day: "numeric", year: "numeric" }))}</span>` : ""}
+        ${inv.refunded ? ` · ${usd(inv.refunded)} refunded` : ""}${inv.credited ? ` · ${usd(inv.credited)} credited` : ""}</p></div>
+    <span class="pill pill--dot ${late ? "pill--red" : cls}">${esc(late ? "Overdue" : label)}</span>
+    <div class="btn-row inv__acts">${inv.status === "open" && inv.hosted_invoice_url ? `<a class="btn btn--navy btn--sm" href="${esc(inv.hosted_invoice_url)}" target="_blank" rel="noopener">Pay ${usd(inv.amount_remaining ?? inv.total)}</a>` : ""}
+      ${inv.invoice_pdf ? `<a class="p-linkbtn" href="${esc(inv.invoice_pdf)}" target="_blank" rel="noopener">${inv.status === "paid" ? "Receipt (PDF)" : "PDF"}</a>` : ""}</div></li>`;
+}
+function viewBilling() {
+  const all = room.invoices || [];
+  const open = all.filter((i) => i.status === "open"), done = all.filter((i) => i.status !== "open");
+  const b = room.billing || {};
+  const addr = b.line1 ? `${esc([b.line1, b.line2].filter(Boolean).join(", "))}<br>${esc(`${b.city || ""}${b.state ? `, ${b.state}` : ""} ${b.postal_code || ""}`.trim())}` : "";
+  return `<div class="p-grid">
+    <section class="p-card p-card--accent" aria-label="Invoices"><h2 class="p-kicker">Invoices</h2>
+      <p class="p-muted">Invoices from Sypher Solutions for <em>${esc(eng.title)}</em>. Pay by card or bank account on Stripe's secure page; a receipt is emailed, and kept here.</p>
+      ${open.length ? `<h3 class="room-sub">To pay <span class="room-sub__n">${open.length}</span></h3><ul class="inv-list">${open.map(invoiceRow).join("")}</ul>` : `<p class="p-empty">Nothing to pay right now.</p>`}
+      ${done.length ? `<h3 class="room-sub">Paid and past</h3><ul class="inv-list">${done.map(invoiceRow).join("")}</ul>` : ""}
+    </section>
+    <section class="p-card" aria-label="Billing address"><h2 class="p-kicker">Billing address</h2>
+      <p class="p-muted">Shown on your invoices. Stripe uses it to work out any sales tax.</p>
+      ${addr ? `<p class="bill-addr"><strong>${esc(b.billing_name || "")}</strong>${b.billing_name ? "<br>" : ""}${addr}${b.billing_email ? `<br><span class="p-muted">${esc(b.billing_email)}</span>` : ""}</p>` : `<p class="p-empty">No billing address yet.</p>`}
+      <details class="room-add"${addr ? "" : " open"}><summary class="p-linkbtn">${addr ? "Change it" : "Add it"}</summary>
+        <form class="p-form p-form--2" id="billing-form">
+          <div class="p-field p-span"><label for="bl-name">Name or company</label><input class="p-input" id="bl-name" name="billing_name" value="${esc(b.billing_name || "")}" required></div>
+          <div class="p-field p-span"><label for="bl-email">Email for invoices</label><input class="p-input" id="bl-email" name="billing_email" type="email" value="${esc(b.billing_email || session.user.email || "")}"></div>
+          <div class="p-field p-span"><label for="bl-l1">Street</label><input class="p-input" id="bl-l1" name="line1" value="${esc(b.line1 || "")}" required autocomplete="address-line1"></div>
+          <div class="p-field p-span"><label for="bl-l2">Suite (optional)</label><input class="p-input" id="bl-l2" name="line2" value="${esc(b.line2 || "")}" autocomplete="address-line2"></div>
+          <div class="p-field"><label for="bl-city">City</label><input class="p-input" id="bl-city" name="city" value="${esc(b.city || "")}" required autocomplete="address-level2"></div>
+          <div class="p-field"><label for="bl-state">State</label><input class="p-input" id="bl-state" name="state" value="${esc(b.state || "")}" required maxlength="2" placeholder="TX" autocomplete="address-level1"></div>
+          <div class="p-field"><label for="bl-zip">ZIP code</label><input class="p-input" id="bl-zip" name="postal_code" value="${esc(b.postal_code || "")}" required autocomplete="postal-code"></div>
+          <div class="p-span"><button class="btn btn--navy btn--sm" type="submit">Save</button></div>
+        </form></details>
+    </section>
+  </div>`;
+}
+
 function viewDocuments() {
   const files = room.files;
   return `<div class="p-grid">
@@ -728,7 +782,7 @@ function viewDocuments() {
       <section class="p-card" aria-label="Documents you’ve shared"><h2 class="p-kicker">You’ve shared</h2>
         ${files.length ? `<ul class="doc-list">${files.map((f) => `<li class="doc">
           <span class="doc__icon doc__icon--mine" aria-hidden="true">${ext(f.name)}</span>
-          <div class="doc__body"><p class="doc__title">${esc(f.name)}</p><p class="doc__meta">${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
+          <div class="doc__body"><p class="doc__title">${fileLabel(f.name)}</p><p class="doc__meta">${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
           <button type="button" class="p-linkbtn" data-open-file="${esc(f.path)}" aria-label="Open ${esc(f.name)}">Open</button></li>`).join("")}</ul>`
           : `<p class="p-muted">Files you attach to questionnaire answers are listed here.</p>`}
         ${room.teamFiles?.length ? `<p class="p-muted" style="margin-top:1rem">Files your team shares are in the <a class="accent" href="#team">Team</a> tab.</p>` : ""}
@@ -807,6 +861,14 @@ async function markReadIfNeeded() {
 function refreshTabs() {
   const nav = document.querySelector(".room-tabs");
   if (nav) nav.outerHTML = tabs();
+  // On a narrow screen the strip scrolls sideways: keep the current tab in sight.
+  const inner = document.querySelector(".room-tabs__inner"), cur = inner?.querySelector('[aria-current="page"]');
+  if (inner && cur) { const a = cur.getBoundingClientRect(), b = inner.getBoundingClientRect(); if (a.left < b.left || a.right > b.right) inner.scrollLeft += a.left - b.left - 16; }
+}
+/** The scroll position that puts the tabs just under the header: the top of a tab's content. */
+function tabsTop() {
+  const cover = document.querySelector(".room-cover");
+  return cover ? cover.offsetTop + cover.offsetHeight - (document.getElementById("p-header")?.offsetHeight || 0) : 0;
 }
 
 async function poll() {
@@ -883,7 +945,7 @@ function teamFileRow(f) {
   const canRemove = f.uploaded_by === me() || !isMember();
   return `<li class="doc">
     <span class="doc__icon doc__icon--mine" aria-hidden="true">${ext(f.name)}</span>
-    <div class="doc__body"><p class="doc__title">${esc(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}
+    <div class="doc__body"><p class="doc__title">${fileLabel(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}
       <p class="doc__meta">${esc(personName(f.uploaded_by))} · ${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
     <div class="doc__actions"><button type="button" class="btn btn--ghost btn--sm" data-open-file="${esc(f.path)}" aria-label="Open ${esc(f.name)}">Open</button>
       ${canRemove ? `<button type="button" class="p-linkbtn" data-team-file-delete="${esc(f.id)}">Remove</button>` : ""}</div>
@@ -949,6 +1011,12 @@ const TIMELINE = {
   pricing_submitted: (d) => [`Pricing submitted: ${d.title || ""}${d.version ? ` (version ${d.version})` : ""}`, "doc"],
   pricing_accepted: (d) => [`Pricing accepted: ${d.title || ""}`, "check"],
   pricing_changes: (d) => [`Pricing sent back: ${d.title || ""}`, "todo"],
+  invoice_sent: (d) => [`Invoice sent: ${d.title || ""}${d.number ? ` (${d.number})` : ""}`, "doc"],
+  invoice_paid: (d) => [`Invoice paid: ${d.title || ""}${d.number ? ` (${d.number})` : ""}`, "check"],
+  invoice_payment_failed: (d) => [`A payment didn't go through: ${d.title || ""}`, "todo"],
+  invoice_voided: (d) => [`Invoice cancelled: ${d.title || ""}`, "check"],
+  invoice_refunded: (d) => [`Refund issued: ${d.title || ""}`, "check"],
+  invoice_credited: (d) => [`Credit issued: ${d.title || ""}`, "check"],
 };
 
 function viewTimeline(inner = false) {
@@ -978,7 +1046,7 @@ function linkTab(link) {
 function renderTab(focus = false) {
   const views = isMember()
     ? { home: viewHome, requests: viewRequests, pricing: viewPricing, project: viewProject, owner: viewOwner, messages: viewMessages, files: viewMemberFiles }
-    : { home: viewHome, requests: viewRequests, pricing: viewPricing, project: viewProject, owner: viewOwner, plan: viewPlan, documents: viewDocuments, messages: viewMessages, team: viewTeam };
+    : { home: viewHome, requests: viewRequests, pricing: viewPricing, project: viewProject, owner: viewOwner, plan: viewPlan, documents: viewDocuments, billing: viewBilling, messages: viewMessages, team: viewTeam };
   const t = tab();
   if (location.hash.slice(1) && location.hash.slice(1) !== t && ALIASES[location.hash.slice(1)]) history.replaceState(null, "", `#${t}`);
   if (t !== "pricing" && grid) { grid.destroy(); grid = null; }
@@ -995,6 +1063,8 @@ function renderTab(focus = false) {
   if (t === "owner" && om && document.getElementById("om-root")) return;
   if (t === "pricing" && grid && document.getElementById("sov-root")?.dataset.sheet === currentSheet()?.id) return; // already showing
   body.innerHTML = views[t]();
+  // Switching tabs from further down the page starts the new tab at its top, not partway down.
+  if (focus && window.scrollY > tabsTop()) window.scrollTo({ top: tabsTop() });
   scrollThreads();
   markReadIfNeeded();
   if (t === "project") mountProject();
@@ -1044,6 +1114,15 @@ async function render() {
     open: openAlert,
     onChange: onAlert,
   }).catch((err) => { console.warn("Alerts unavailable:", err.message); return null; });
+  // A payment made on Stripe's page (another tab) shows here as soon as Stripe tells the portal.
+  if (engagements.some((e) => e.access !== "member")) {
+    store.subscribe("billing", [{ table: "invoices", filter: `client_id=eq.${me()}` }], ({ new: row, old }) => {
+      if ((row?.engagement_id || old?.engagement_id) !== eng?.id) return;
+      if (row?.status === "paid" && room?.invoices?.some((i) => i.id === row.id && i.status !== "paid")) toast("Payment received. Thank you.");
+      clearTimeout(softTimer);
+      softTimer = setTimeout(softReload, 600);
+    }).catch((err) => console.warn("Live billing updates unavailable:", err.message));
+  }
   refreshTabs();
   if (tab() === "home") repaintNew();
 }
@@ -1116,6 +1195,11 @@ function ics() {
 const memberById = (id) => room.roster?.members?.find((m) => m.id === id);
 
 window.addEventListener("hashchange", () => { if (room) renderTab(true); });
+// Choosing the tab you're already on takes you back to its top.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest(".room-tabs__link[aria-current='page']");
+  if (a && room && window.scrollY > tabsTop() + 4) { e.preventDefault(); window.scrollTo({ top: tabsTop(), behavior: "smooth" }); }
+});
 document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
 
 main.addEventListener("click", async (e) => {
@@ -1321,6 +1405,12 @@ main.addEventListener("submit", async (e) => {
       if (btn) btn.textContent = "Uploading…";
       const row = await store.uploadTeamFile(eng.id, file, form.note.value.trim());
       toastNotice(row.notice, "Shared with the team.", "Shared with the team.");
+      await reload();
+    } else if (form.id === "billing-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      await store.billing({ action: "save_address", billing_name: v("billing_name"), billing_email: v("billing_email"), line1: v("line1"), line2: v("line2"),
+        city: v("city"), state: v("state").toUpperCase(), postal_code: v("postal_code") });
+      toast("Billing address saved.");
       await reload();
     }
   } catch (err) { toast(err.message, true); }
