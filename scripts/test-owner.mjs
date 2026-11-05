@@ -52,6 +52,8 @@ const total = (s) => Object.values(s).reduce((a, b) => a + b, 0);
   ok("a property bought this year has no catch-up and full bonus on the components", fresh.catchUp === 0 && near(fresh.yearSeg, 380000 * 0.37 + fresh.asFiled[2026] * 0.63, 1));
   const improvement = propertySchedule(p, [{ category: "qip", amount: 60000, placed_in_service: "2023-04-01", acquired: "2023-04-01" }], { studyYear: 2026, marginalRate: 0.3 });
   ok("a later improvement is its own asset: 80% bonus in 2023 as QIP, 39-year as filed", near(improvement.withSeg[2023], 60000 * 0.8 + 60000 * 0.2 * 0.05 + improvement.asFiled[2023] - (60000 * 8.5) / 12 / 39, 1));
+  const home = propertySchedule({ use: "personal", cost_basis: 479000, market_value: 479000, debt_balance: 150000 }, [{ category: "p5", pct: 14 }], { studyYear: 2026, marginalRate: 0.3 });
+  ok("a residence is never depreciated and needs no basis", home.depreciable === 0 && home.extra === 0 && home.missing.length === 0);
   const missing = propertySchedule({ use: "residential" }, [], {});
   ok("missing inputs are named", missing.missing.includes("cost basis") && missing.missing.includes("placed-in-service date"));
 }

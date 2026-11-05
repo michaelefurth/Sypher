@@ -144,13 +144,17 @@ export function propertySchedule(property, components = [], opts = {}) {
   const study = opts.studyYear || CURRENT_YEAR;
   const cost = num(p.cost_basis) || 0;
   const landValue = p.land_value != null ? num(p.land_value) : round2(cost * ((num(p.land_pct) ?? 0) / 100));
-  const depreciable = Math.max(0, cost - landValue);
+  // A residence or bare land is not depreciated: it still counts for value, debt and debt service.
+  const depreciates = !["personal", "land"].includes(p.use);
+  const depreciable = depreciates ? Math.max(0, cost - landValue) : 0;
   const placed = p.placed_in_service || p.acquired || null;
   const bYears = num(p.recovery_years) || (p.use === "residential" ? 27.5 : 39);
   const missing = [];
-  if (!cost) missing.push("cost basis");
-  if (!placed) missing.push("placed-in-service date");
-  if (p.land_pct == null && p.land_value == null) missing.push("land share");
+  if (depreciates) {
+    if (!cost) missing.push("cost basis");
+    if (!placed) missing.push("placed-in-service date");
+    if (p.land_pct == null && p.land_value == null) missing.push("land share");
+  }
 
   // Components: a share of the depreciable basis or a fixed amount (an improvement made later).
   const resolved = [];
