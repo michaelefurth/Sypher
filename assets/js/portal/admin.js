@@ -6,6 +6,7 @@ import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession,
 import { SOV_TEMPLATES, sovTotals, sheetPill, money } from "./sov.js";
 import { mountBell } from "./bell.js";
 import { createFromTemplate, modelSummary } from "./model.js";
+import { createOwnerFromTemplate, ownerSummary } from "./owner.js";
 import { viewInquiries, viewInquiry, viewProposals, viewProposal, pipelineSubmit, pipelineClick } from "./admin-pipeline.js";
 
 const main = document.getElementById("main");
@@ -137,6 +138,8 @@ async function viewEngagement(id) {
   const sheetLines = await Promise.all(sheets.map((x) => store.sovLines(x.id).catch(() => [])));
   const models = await store.pmModels(id).catch(() => []);
   const summaries = await Promise.all(models.map((m) => modelSummary(m.id).catch(() => null)));
+  const owners = await store.omModels(id).catch(() => []);
+  const ownerSums = await Promise.all(owners.map((m) => ownerSummary(m.id).catch(() => null)));
   const budget = budgetRows.length ? new Map(budgetRows.map((b) => [b.line_id, b])) : null;
   window.__team = { roster, teamFiles };
   const members = roster?.members || [];
@@ -210,7 +213,8 @@ async function viewEngagement(id) {
                 ${a.status === "submitted" && a.kind !== "pricing" ? `<button class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button><button class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>` : ""}
                 ${a.kind === "pricing" && a.link_ref ? `<a class="p-linkbtn" href="pricing.html?s=${esc(a.link_ref)}">Open the sheet</a>` : ""}
                 ${a.link_kind === "pm_input" && models.length ? `<a class="p-linkbtn" href="project.html?m=${esc(models[0].id)}">Open the model</a>` : ""}
-                ${a.status !== "accepted" && a.kind !== "pricing" && a.link_kind !== "pm_input" ? `<button class="p-linkbtn" data-req-answer="${esc(a.id)}">Answer for them</button>` : ""}
+                ${["om_input", "om_finding"].includes(a.link_kind) && owners.length ? `<a class="p-linkbtn" href="owner.html?m=${esc(owners[0].id)}">Open the owner model</a>` : ""}
+                ${a.status !== "accepted" && a.kind !== "pricing" && !["pm_input", "om_input"].includes(a.link_kind) ? `<button class="p-linkbtn" data-req-answer="${esc(a.id)}">Answer for them</button>` : ""}
                 <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`;
           }).join("")}</ul>` : `<p class="p-muted">Ask the client or anyone on the team for a document, an answer, an approval or a to-do. They answer in the portal with a note and files, and you accept it or send it back. Anyone on the engagement can ask you, too.</p>`}
           <form class="p-form p-form--2" id="action-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
@@ -234,6 +238,21 @@ async function viewEngagement(id) {
               <div class="p-field"><label for="pm-sheet" style="color:var(--on-dark-muted)">Hard costs from</label><select class="p-select" id="pm-sheet" name="sheet"><option value="">No pricing sheet</option>${sheets.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</select></div>
               <div class="p-field"><label for="pm-sf" style="color:var(--on-dark-muted)">Building area (SF)</label><input class="p-input" id="pm-sf" name="sf" inputmode="decimal"></div>
               <div class="p-span"><button class="btn btn--gold btn--sm" type="submit">Create the model</button></div>
+            </form></details>
+        </section>
+        <section class="p-card p-card--navy" id="owner"><p class="p-kicker">Owner model</p>
+          ${owners.length ? `<ul class="pm-adminlist">${owners.map((m, i) => { const r = ownerSums[i]?.result; const open = ownerSums[i]?.inputs.filter((x) => x.status !== "confirmed").length ?? 0; return `<li>
+            <div class="p-row"><a class="link-on-dark" href="owner.html?m=${esc(m.id)}"><b>${esc(m.title)}</b></a>${r?.global.cfads != null ? `<span>${money(r.global.cfads)} recurring</span>` : ""}</div>
+            ${r ? `<p class="pm-adminlist__figs">Coverage ${r.global.dscr == null ? "—" : `${r.global.dscr.toFixed(2)}×`}${r.global.withProject ? ` · with the project ${r.global.withProject.dscr.toFixed(2)}×` : ""} · cost segregation ${money(r.seg.extra)} year 1 (${money(r.seg.taxSaved)} tax) · ${r.findings.open} open finding${r.findings.open === 1 ? "" : "s"} · ${open} open assumption${open === 1 ? "" : "s"}</p>` : ""}
+            <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--gold btn--sm" href="owner.html?m=${esc(m.id)}">Open the owner model</a><button class="p-linkbtn" data-owner-delete="${esc(m.id)}" style="color:var(--champagne)">Delete</button></div></li>`; }).join("")}</ul>`
+            : `<p style="color:var(--on-dark-muted)">The owner's businesses, properties and taxes in one place: the books by year beside the filed returns, the adjustments that normalize cash flow and explain the book-to-tax gap, each property's depreciation as filed and with a cost segregation study, the owner's tax estimate, global coverage of existing and new debt, and a findings register with who resolves what. The same people see it as the project model.</p>`}
+          <details class="room-add"${owners.length ? "" : " open"}><summary class="p-linkbtn" style="color:var(--champagne)">New owner model</summary>
+            <form class="p-form p-form--2" id="owner-form">
+              <div class="p-field p-span"><label for="om-title" style="color:var(--on-dark-muted)">Title</label><input class="p-input" id="om-title" name="title" required placeholder="e.g. Books, taxes and properties: 2024 to 2026"></div>
+              <div class="p-field"><label for="om-owner" style="color:var(--on-dark-muted)">Owner's name</label><input class="p-input" id="om-owner" name="owner_name" value="${esc(eng.client?.full_name || "")}"></div>
+              <div class="p-field"><label for="om-pm" style="color:var(--on-dark-muted)">Project model for coverage</label><select class="p-select" id="om-pm" name="pm_model_id"><option value="">None</option>${models.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</select></div>
+              <div class="p-field p-span"><label for="om-entities" style="color:var(--on-dark-muted)">Entities (one per line, as “Name | kind”: smllc, sole_prop, partnership, s_corp, c_corp, rental)</label><textarea class="p-textarea" id="om-entities" name="entities" rows="3" placeholder="${esc(eng.client?.company || "The business")} | smllc"></textarea></div>
+              <div class="p-span"><button class="btn btn--gold btn--sm" type="submit">Create the owner model</button> <span style="color:var(--on-dark-muted)">It starts with the standard assumptions and the fifteen standard forensic findings.</span></div>
             </form></details>
         </section>
         <section class="p-card p-card--accent" id="pricing"><p class="p-kicker">Pricing (schedule of values)</p>
@@ -565,6 +584,12 @@ main.addEventListener("submit", async (e) => {
       const m = await createFromTemplate({ engagementId: engId, title: v("title"), sheetId: v("sheet") || null, buildingSf: sf });
       toast("Model created from the template. Fill in the costs and assumptions.");
       location.href = `project.html?m=${m.id}`;
+    } else if (form.id === "owner-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const entities = v("entities").split("\n").map((l) => l.trim()).filter(Boolean).map((l) => { const [name, kind] = l.split("|").map((x) => x.trim()); return { name, kind: ["sole_prop", "smllc", "partnership", "s_corp", "c_corp", "rental", "individual"].includes(kind) ? kind : "smllc" }; });
+      const m = await createOwnerFromTemplate({ engagementId: engId, title: v("title"), ownerName: v("owner_name") || null, pmModelId: v("pm_model_id") || null, entities });
+      toast("Owner model created. Add the books by year, the properties and the adjustments.");
+      location.href = `owner.html?m=${m.id}`;
     } else if (form.id === "sheet-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const contractor = v("contractor_id") || null;
@@ -655,8 +680,11 @@ main.addEventListener("click", async (e) => {
     }
     else if (t.dataset.memberModel) {
       await store.setMemberModel(t.dataset.memberModel, t.dataset.allow === "1");
-      toast(t.dataset.allow === "1" ? "They can now see the project model." : "Model access removed.");
+      toast(t.dataset.allow === "1" ? "They can now see the project and owner models." : "Model access removed.");
       route();
+    }
+    else if (t.dataset.ownerDelete) {
+      if (await confirmDialog({ title: "Delete this owner model?", body: "<p>Its entities, books, adjustments, properties, findings, assumptions, comments and saved versions are deleted. The project model is kept.</p>", confirmLabel: "Delete" })) { await store.omDeleteModel(t.dataset.ownerDelete); toast("Deleted."); route(); }
     }
     else if (t.dataset.modelDelete) {
       if (await confirmDialog({ title: "Delete this project model?", body: "<p>Its cost lines, assumptions, comments and saved versions are deleted. The pricing sheet is kept.</p>", confirmLabel: "Delete" })) { await store.pmDeleteModel(t.dataset.modelDelete); toast("Deleted."); route(); }

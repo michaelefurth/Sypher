@@ -596,6 +596,63 @@ ok("model alerts never reach the contractor or advisers without access", (await 
 await as(B, async () => { ok("another client can't see the model", (await rows(`select * from public.pm_models`)).length === 0 && (await rows(`select * from public.pm_comments`)).length === 0); });
 await asAnon(async () => { ok("signed-out visitors can't reach the model", await fails(`select public.pm_set_input('${IN_CF}', 1, null, 'confirmed', null)`) && await fails(`select * from public.pm_models`)); });
 
+// --- The owner model (20261108000000_owner_model) ---
+const OM = "c0000000-0000-0000-0000-000000000001", OE = "c1000000-0000-0000-0000-000000000001", OP = "c2000000-0000-0000-0000-000000000001";
+const OF = "c3000000-0000-0000-0000-000000000001", OI_DRAWS = "c4000000-0000-0000-0000-000000000001", OI_FS = "c4000000-0000-0000-0000-000000000002";
+await as(ADMIN, async () => {
+  await q(`insert into public.om_models (id, engagement_id, title, owner_name, pm_model_id) values ('${OM}', '${ENG_A}', 'Owner model', 'Client A', '${PM}')`);
+  await q(`insert into public.om_entities (id, model_id, engagement_id, name, kind) values ('${OE}', '${OM}', '${ENG_A}', 'Trade A', 'smllc')`);
+  await q(`insert into public.om_periods (model_id, engagement_id, entity_id, period, revenue, net_income, tax_net) values ('${OM}', '${ENG_A}', '${OE}', '2025', 1000000, 100000, 104000)`);
+  await q(`insert into public.om_adjustments (model_id, engagement_id, entity_id, period, kind, label, amount) values ('${OM}', '${ENG_A}', '${OE}', '2025', 'book_tax', 'Meals at 50%', 4000)`);
+  await q(`insert into public.om_properties (id, model_id, engagement_id, label, use, used_by_entity_id, rent_source, se_business, cost_basis, land_pct, placed_in_service) values ('${OP}', '${OM}', '${ENG_A}', '1 Main St', 'restaurant', '${OE}', 'self', true, 475000, 20, '2020-07-01')`);
+  await q(`insert into public.om_components (model_id, engagement_id, property_id, category, pct) values ('${OM}', '${ENG_A}', '${OP}', 'p5', 27)`);
+  await q(`insert into public.om_findings (id, model_id, engagement_id, ref, severity, area, observation) values ('${OF}', '${OM}', '${ENG_A}', 'F01', 'critical', 'Books', 'Book net differs from the return')`);
+  await q(`insert into public.om_inputs (id, model_id, engagement_id, key, section, label, unit) values
+    ('${OI_DRAWS}', '${OM}', '${ENG_A}', 'living_draws', 'Owner', 'Living draws', 'usd'),
+    ('${OI_FS}', '${OM}', '${ENG_A}', 'filing_status', 'Taxes', 'Filing status', 'text')`);
+  ok("a component must use a known recovery class", await fails(`insert into public.om_components (model_id, engagement_id, property_id, category, pct) values ('${OM}', '${ENG_A}', '${OP}', 'p9', 1)`));
+  ok("a period is unique per entity", await fails(`insert into public.om_periods (model_id, engagement_id, entity_id, period) values ('${OM}', '${ENG_A}', '${OE}', '2025')`));
+});
+await as(A, async () => {
+  ok("the client sees the owner model, its books, properties and findings", (await rows(`select * from public.om_models`)).length === 1 && (await rows(`select * from public.om_periods`)).length === 1
+    && (await rows(`select * from public.om_properties`)).length === 1 && (await rows(`select * from public.om_components`)).length === 1 && (await rows(`select * from public.om_findings`)).length === 1);
+  ok("the client can't change the books, properties or findings", (await rows(`update public.om_periods set net_income = 1 returning id`)).length === 0
+    && (await rows(`update public.om_properties set cost_basis = 1 returning id`)).length === 0 && (await rows(`update public.om_findings set status = 'resolved' returning id`)).length === 0);
+  ok("the client can't set an owner-model assumption they weren't asked to confirm", await fails(`select public.om_set_input('${OI_DRAWS}', 1, null, 'confirmed', null)`));
+  await q(`insert into public.om_comments (model_id, engagement_id, target_kind, target_id, target_label, author_id, body) values ('${OM}', '${ENG_A}', 'finding', '${OF}', 'F01', '${A}', 'The bookkeeper has the ledger')`);
+  ok("the client can comment on a finding", (await rows(`select * from public.om_comments`)).length === 1);
+  await q(`insert into public.om_snapshots (model_id, engagement_id, label, data, created_by) values ('${OM}', '${ENG_A}', 'Nov', '{}', '${A}')`);
+  ok("the client can save a version", (await rows(`select * from public.om_snapshots`)).length === 1);
+});
+await as(LAW, async () => {
+  ok("advisers without model access don't see the owner model", (await rows(`select * from public.om_models`)).length === 0 && (await rows(`select * from public.om_properties`)).length === 0 && (await rows(`select * from public.om_findings`)).length === 0);
+  ok("advisers without model access can't comment on it", await fails(`insert into public.om_comments (model_id, engagement_id, target_kind, author_id, body) values ('${OM}', '${ENG_A}', 'model', '${LAW}', 'hi')`));
+});
+await as(CT, async () => {
+  ok("the contractor never sees the owner model", (await rows(`select * from public.om_models`)).length === 0 && (await rows(`select * from public.om_periods`)).length === 0 && (await rows(`select * from public.om_inputs`)).length === 0);
+});
+await as(ADMIN, async () => {
+  ok("Michael can't ask someone without model access to confirm an owner-model item", await fails(`select public.om_ask_input('${OI_DRAWS}', '${LAW}', null)`));
+  await q(`select public.om_ask_input('${OI_DRAWS}', '${CPA}', '2026-12-01')`);
+  await q(`select public.om_ask_finding('${OF}', '${CPA}', null)`);
+  ok("a text assumption rejects long values", await fails(`select public.om_set_input('${OI_FS}', null, repeat('x', 81), 'confirmed', null)`));
+  await q(`select public.om_set_input('${OI_FS}', null, 'single', 'confirmed', 'From the 2025 return')`);
+});
+ok("asking creates requests for the accountant", (await rows(`select * from public.action_items where link_kind in ('om_input', 'om_finding') and assignee_id = '${CPA}'`)).length === 2);
+ok("assigning a finding moves it to in progress", (await rows(`select status, owner_id from public.om_findings`))[0].status === "in_progress");
+await as(CPA, async () => {
+  ok("the accountant with access sees the owner model", (await rows(`select * from public.om_inputs`)).length === 2 && (await rows(`select * from public.om_adjustments`)).length === 1);
+  ok("the accountant can't change an assumption not assigned to them", await fails(`select public.om_set_input('${OI_FS}', null, 'mfj', 'confirmed', null)`));
+  const v = (await rows(`select (public.om_set_input('${OI_DRAWS}', 90000, null, 'estimate', 'From the owner')).value v`))[0].v;
+  ok("the accountant sets the owner-model assumption they were asked about", Number(v) === 90000);
+  ok("the accountant can't edit the books or findings", (await rows(`update public.om_periods set net_income = 1 returning id`)).length === 0 && (await rows(`update public.om_findings set status = 'resolved' returning id`)).length === 0);
+  ok("the accountant sees the owner-model change log", (await rows(`select * from public.om_input_log where input_id = '${OI_DRAWS}'`)).length === 1);
+});
+ok("the accountant's owner-model answer moves their request to review", (await rows(`select status from public.action_items where link_kind = 'om_input'`))[0].status === "submitted");
+ok("the client's owner-model comment alerts Michael and the accountant with access, nobody else", (await rows(`select user_id from public.notifications where kind = 'comment' and link = 'owner'`)).map((r) => r.user_id).sort().join() === [ADMIN, CPA].sort().join());
+await as(B, async () => { ok("another client can't see the owner model", (await rows(`select * from public.om_models`)).length === 0 && (await rows(`select * from public.om_comments`)).length === 0); });
+await asAnon(async () => { ok("signed-out visitors can't reach the owner model", await fails(`select public.om_set_input('${OI_DRAWS}', 1, null, 'confirmed', null)`) && await fails(`select * from public.om_models`)); });
+
 console.log(results.join("\n"));
 const failed = results.some((r) => r.startsWith("FAIL"));
 console.log(failed ? "\nSOME TESTS FAILED" : `\nALL ${results.length} TESTS PASSED`);

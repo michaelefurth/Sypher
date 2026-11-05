@@ -829,6 +829,85 @@ export const store = {
     check(await client.rpc("set_member_model", { member: memberId, allow }));
   },
 
+  // ---- the owner model (same audience as the project model) ----
+  async omModels(engagementId) {
+    const client = await sb();
+    return check(await client.from("om_models").select("*").eq("engagement_id", engagementId).order("created_at"));
+  },
+  async omModel(id) {
+    const client = await sb();
+    return check(await client.from("om_models").select("*").eq("id", id).single());
+  },
+  /** Everything in one model, in one round trip per table. */
+  async omBundle(modelId) {
+    const client = await sb();
+    const get = (t, order = "position") => client.from(t).select("*").eq("model_id", modelId).order(order).then(check);
+    const [entities, periods, adjustments, properties, components, findings, inputs, comments, snapshots] = await Promise.all([
+      get("om_entities"), get("om_periods"), get("om_adjustments"), get("om_properties"), get("om_components"), get("om_findings"), get("om_inputs"),
+      get("om_comments", "created_at").catch(() => []),
+      client.from("om_snapshots").select("id, label, created_by, created_at").eq("model_id", modelId).order("created_at", { ascending: false }).then(check).catch(() => []),
+    ]);
+    return { entities, periods, adjustments, properties, components, findings, inputs, comments, snapshots };
+  },
+  async omInputLog(engagementId, limit = 60) {
+    const client = await sb();
+    return check(await client.from("om_input_log").select("*").eq("engagement_id", engagementId).order("changed_at", { ascending: false }).limit(limit));
+  },
+  async omSetInput(id, value, text, status, note) {
+    const client = await sb();
+    return check(await client.rpc("om_set_input", { input: id, p_value: value, p_text: text ?? null, p_status: status, p_note: note || null }));
+  },
+  async omAskInput(id, who, due) {
+    const client = await sb();
+    return check(await client.rpc("om_ask_input", { input: id, who, p_due: due || null }));
+  },
+  async omAskFinding(id, who, due) {
+    const client = await sb();
+    return check(await client.rpc("om_ask_finding", { finding: id, who, p_due: due || null }));
+  },
+  async omAddComment(row) {
+    const client = await sb();
+    return check(await client.from("om_comments").insert(row).select().single());
+  },
+  async omDeleteComment(id) {
+    const client = await sb();
+    check(await client.from("om_comments").delete().eq("id", id));
+  },
+  async omSaveSnapshot(row) {
+    const client = await sb();
+    return check(await client.from("om_snapshots").insert(row).select("id, label, created_by, created_at").single());
+  },
+  async omSnapshot(id) {
+    const client = await sb();
+    return check(await client.from("om_snapshots").select("*").eq("id", id).single());
+  },
+  // Admin: the model's structure. `table` is one of om_entities, om_periods, om_adjustments,
+  // om_properties, om_components, om_findings, om_inputs.
+  async omCreateModel(fields) {
+    const client = await sb();
+    return check(await client.from("om_models").insert(fields).select().single());
+  },
+  async omUpdateModel(id, fields) {
+    const client = await sb();
+    check(await client.from("om_models").update(fields).eq("id", id));
+  },
+  async omDeleteModel(id) {
+    const client = await sb();
+    check(await client.from("om_models").delete().eq("id", id));
+  },
+  async omInsert(table, rows) {
+    const client = await sb();
+    return check(await client.from(table).insert(rows).select());
+  },
+  async omUpdate(table, id, fields) {
+    const client = await sb();
+    return check(await client.from(table).update(fields).eq("id", id).select().single());
+  },
+  async omDelete(table, id) {
+    const client = await sb();
+    check(await client.from(table).delete().eq("id", id));
+  },
+
   /** Live changes. Calls onChange({ table, eventType, new, old }) for each row change the user may see.
    *  `filters` is a list of { table, filter } (filter as "column=eq.value"). Returns an unsubscribe function. */
   async subscribe(name, filters, onChange, onStatus) {

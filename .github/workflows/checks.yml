@@ -23,6 +23,8 @@ jobs:
           node rls-test.mjs
       - name: Project model arithmetic
         run: node scripts/test-model.mjs
+      - name: Owner model arithmetic (depreciation, taxes, cash flow)
+        run: node scripts/test-owner.mjs
       - name: Scripts parse
         run: for f in assets/js/*.js assets/js/portal/*.js scripts/*.mjs documents/*.mjs documents/kit/*.mjs documents/samples/*.mjs; do node --check "$f"; done
       - name: Sign-in email templates build
