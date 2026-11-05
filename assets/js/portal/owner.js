@@ -5,7 +5,14 @@
 // Sections: the books by entity and period with the filed figures beside them; the adjustments
 // that normalize cash flow and bridge book to tax; the properties with their cost segregation
 // components and what a study is worth; the owner's taxes; the global cash flow and coverage
-// (with the project model's new debt when linked); the assumptions; the findings register.
+// (with the project model's new debt when linked); the assumptions; the personal section; the
+// findings register; the discussion and saved versions.
+//
+// Two views. The summary (the client's and a lender's default) shows what is still open, the
+// coverage, the taxes, the properties one line each and the findings that matter, all open.
+// The working view (Michael's default) shows every section, each closed to a one-line summary
+// until it is opened; a bar under the figures jumps between them. What is open is remembered
+// in the browser.
 import { store } from "./store.js";
 import { esc, fmtDate, relTime, toast, confirmDialog, promptDialog, download } from "./ui.js";
 import { money, parseNum } from "./sov.js";
@@ -88,6 +95,14 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
   const admin = role === "admin";
   let model, d, log = [], project = null, result, live = false, destroyed = false, deferred = false, thread = null;
   const timers = new Map();
+  // What this person has open: the view (summary or working), the sections and property cards
+  // expanded, and whether every finding is shown. Remembered in this browser, per model.
+  const pref = (k, fallback) => { try { const v = localStorage.getItem(`om:${modelId}:${k}`); return v == null ? fallback : JSON.parse(v); } catch { return fallback; } };
+  const remember = (k, v) => { try { localStorage.setItem(`om:${modelId}:${k}`, JSON.stringify(v)); } catch { /* storage unavailable */ } };
+  let view = pref("view", admin ? "working" : "summary");
+  const openSecs = new Set(pref("open", ["open"]));
+  const openProps = new Set(pref("props", []));
+  let allFindings = pref("allFindings", false);
 
   async function load() {
     model = await store.omModel(modelId);
@@ -261,8 +276,13 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           <tr><th scope="row">With the study</th>${yrs.map((y) => `<td class="pm-c-num">${calc(`p:${p.id}:s${y}`, money((s.withSeg[y] || 0) + (y === result.study ? s.catchUp : 0)))}</td>`).join("")}</tr>
         </tbody></table></div><p class="p-muted pm-note">The study year includes the catch-up. Bonus depreciation follows the year each component was placed in service (100% for property acquired after January 19, 2025; 60% in 2024; 80% in 2023; 100% from late 2017 through 2022). Half-year convention; mid-month for the building.</p></details>`;
       const presets = admin ? `<span class="om-presets">Apply a typical split: ${Object.entries(SEG_PRESETS).map(([k, v]) => `<button type="button" class="p-linkbtn" data-preset="${k}" data-prop="${esc(p.id)}">${esc(v.label)}</button>`).join(" ")}</span>` : "";
-      return `<div class="om-prop" data-prop="${esc(p.id)}">
-        <div class="p-row"><h4 class="room-sub">${admin ? field("om_properties", p.id, "label", p.label, { kind: "text", label: "Property", width: "18rem" }) : esc(p.label)}${p.address ? `<span class="pm-sub">${esc(p.address)}</span>` : ""}</h4><span>${talk("property", p.id, p.label)}${del("om_properties", p.id, p.label)}</span></div>
+      const line = `<span class="om-prop__line">${s.missing.length ? `needs ${s.missing.map(esc).join(", ")}` : `${USES.find(([k]) => k === p.use)?.[1] || ""} · extra deduction ${calc(`p:${p.id}:lx`, money(s.extra))} in ${result.study} · tax saved ${calc(`p:${p.id}:ls`, money(s.savingsYear1))}${p.passive ? ` · ${calc(`p:${p.id}:lsus`, money(s.suspended))} suspended` : ""}`}</span>`;
+      const address = p.address ? `<span class="pm-sub">${esc(p.address)}</span>` : "";
+      if (view === "summary") return `<div class="om-prop om-prop--line" data-prop="${esc(p.id)}"><div class="om-prop__head"><h4 class="room-sub">${esc(p.label)}${address}</h4>${line}<span class="om-prop__acts">${talk("property", p.id, p.label)}</span></div></div>`;
+      const open = openProps.has(p.id);
+      return `<div class="om-prop${open ? " is-open" : ""}" data-prop="${esc(p.id)}">
+        <div class="om-prop__head" data-prop-head="${esc(p.id)}"><button type="button" class="om-toggle" data-prop-toggle="${esc(p.id)}" aria-expanded="${open}" aria-controls="om-p-${esc(p.id)}" aria-label="${open ? "Hide" : "Show"} the detail of ${esc(p.label)}"><span class="om-chev" aria-hidden="true"></span></button><h4 class="room-sub">${admin ? field("om_properties", p.id, "label", p.label, { kind: "text", label: "Property", width: "18rem" }) : esc(p.label)}${address}</h4>${line}<span class="om-prop__acts">${talk("property", p.id, p.label)}${del("om_properties", p.id, p.label)}</span></div>
+        <div class="om-prop__body" id="om-p-${esc(p.id)}"${open ? "" : " hidden"}>
         ${fields}
         ${s.missing.length ? `<p class="pm-open__mine">Needed before depreciation can be shown: ${s.missing.map(esc).join(", ")}.</p>` : ""}
         ${strip}
@@ -270,9 +290,10 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
         ${comps.length ? `<div class="pm-wrap"><table class="pm-table om-table om-table--comp"><thead><tr><th scope="col">Class</th><th class="pm-c-num" scope="col">Share of basis</th><th class="pm-c-num" scope="col">Or amount</th><th scope="col">Placed in service</th><th class="pm-c-num" scope="col">Basis</th><th class="pm-c-num" scope="col">Bonus</th><th class="pm-c-num" scope="col">${result.study} deduction</th><th scope="col">Confidence</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead><tbody>${comps.map(compRow).join("")}</tbody></table></div>` : `<p class="p-muted">No components yet: the whole building depreciates straight line.${admin ? " Apply a typical split or add a component." : ""}</p>`}
         ${admin ? `<p><button type="button" class="p-linkbtn" data-add-comp="${esc(p.id)}">+ Add a component</button></p>` : ""}
         ${sched}
+        </div>
       </div>`;
     }).join("");
-    return `<div data-part="properties">${blocks || `<p class="p-muted">No properties yet.</p>`}${admin ? `<p><button type="button" class="p-linkbtn" data-add-prop>+ Add a property</button></p>` : ""}
+    return `<div data-part="properties">${view === "summary" ? "" : `<p class="p-muted pm-note">Each property on one line; open it for the facts, the cost segregation components and the depreciation by year.</p>`}${blocks || `<p class="p-muted">No properties yet.</p>`}${admin && view !== "summary" ? `<p><button type="button" class="p-linkbtn" data-add-prop>+ Add a property</button></p>` : ""}
       ${result.properties.length ? `<div class="om-strip om-strip--total"><div><span>All properties: extra deduction</span><b>${calc("seg:extra", money(result.seg.extra))}</b></div><div><span>Catch-up</span><b>${calc("seg:cu", money(result.seg.catchUp))}</b></div><div><span>Suspended</span><b>${calc("seg:sus", money(result.seg.suspended))}</b></div><div><span>Tax saved in ${result.study}</span><b>${calc("seg:tax", money(result.seg.taxSaved))}</b><small>from the full tax estimate</small></div><div><span>Timing benefit (PV)</span><b>${calc("seg:npv", money(result.seg.npv))}</b></div></div>` : ""}
     </div>`;
   }
@@ -341,7 +362,10 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
   }
 
   function findings() {
-    const list = [...d.findings].sort((a, b) => SEV.findIndex(([k]) => k === a.severity) - SEV.findIndex(([k]) => k === b.severity) || a.position - b.position);
+    const all = [...d.findings].sort((a, b) => SEV.findIndex(([k]) => k === a.severity) - SEV.findIndex(([k]) => k === b.severity) || a.position - b.position);
+    const lead = all.filter((f) => (f.severity === "critical" && f.status !== "resolved" && f.status !== "dismissed") || (f.owner_id === me && f.status !== "resolved"));
+    const list = allFindings || !lead.length ? all : lead;
+    const hidden = all.length - list.length;
     const entOpts = [["", "—"], ...d.entities.map((e) => [e.id, e.name])];
     const item = (f) => `<li class="om-finding is-${esc(f.status)} sev-${esc(f.severity)}" id="finding-${esc(f.id)}">
       <div class="om-finding__head">
@@ -361,11 +385,13 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
         <label>Evidence needed ${field("om_findings", f.id, "evidence", f.evidence, { kind: "area", label: "Evidence needed" })}</label>
         <label>Resolution ${field("om_findings", f.id, "resolution", f.resolution, { kind: "area", label: "Resolution" })}</label>
       </div>` : `<div class="om-finding__body om-finding__body--ro">
-        <p><b>${esc(f.observation)}</b></p>${f.why ? `<p><span class="om-lbl">Why it matters</span> ${esc(f.why)}</p>` : ""}${f.test ? `<p><span class="om-lbl">Test</span> ${esc(f.test)}</p>` : ""}${f.evidence ? `<p><span class="om-lbl">Evidence needed</span> ${esc(f.evidence)}</p>` : ""}${f.resolution ? `<p><span class="om-lbl">Resolution</span> ${esc(f.resolution)}</p>` : ""}
+        <p><b>${esc(f.observation)}</b></p>${view === "summary" && (f.why || f.test || f.evidence || f.resolution) ? `<details class="om-finding__more"><summary class="p-linkbtn">Why it matters, the test and the evidence</summary>` : ""}${f.why ? `<p><span class="om-lbl">Why it matters</span> ${esc(f.why)}</p>` : ""}${f.test ? `<p><span class="om-lbl">Test</span> ${esc(f.test)}</p>` : ""}${f.evidence ? `<p><span class="om-lbl">Evidence needed</span> ${esc(f.evidence)}</p>` : ""}${f.resolution ? `<p><span class="om-lbl">Resolution</span> ${esc(f.resolution)}</p>` : ""}${view === "summary" && (f.why || f.test || f.evidence || f.resolution) ? "</details>" : ""}
       </div>`}
     </li>`;
     return `<div data-part="findings"><p class="p-muted pm-note">${result.findings.open} open of ${result.findings.total}. Each finding names what was observed, why it matters, the test, the evidence needed and who resolves it. ${admin ? "Assign someone and press Ask: they get a request." : "Comment on any finding; the person assigned gets a request."}</p>
-      <ol class="om-findings">${list.map(item).join("")}</ol>${admin ? `<p><button type="button" class="p-linkbtn" data-add-finding>+ Add a finding</button></p>` : ""}</div>`;
+      ${hidden ? `<p class="pm-sub">Showing the critical findings${lead.some((f) => f.owner_id === me) ? " and the ones assigned to you" : ""}: ${list.length} of ${all.length}.</p>` : ""}
+      <ol class="om-findings">${list.map(item).join("")}</ol>
+      <p class="om-findings__more">${hidden ? `<button type="button" class="btn btn--ghost btn--sm" data-all-findings="1">Show all ${all.length} findings</button>` : lead.length && lead.length < all.length ? `<button type="button" class="p-linkbtn" data-all-findings="0">Show the critical ones only</button>` : ""}${admin ? ` <button type="button" class="p-linkbtn" data-add-finding>+ Add a finding</button>` : ""}</p></div>`;
   }
 
   function personal() {
@@ -391,6 +417,86 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     </div>`;
   }
 
+  function discussion() {
+    const recent = d.comments.slice(-4).reverse();
+    return `<div class="pm-foot" data-part="discussion">
+      <div><h4 class="room-sub">Discussion</h4>${recent.length ? `<ul class="pm-recent">${recent.map((c) => `<li><b>${esc(c.author_id === me ? "You" : nameOf(c.author_id))}</b>${c.target_label ? ` on <button type="button" class="p-linkbtn pm-recent__on" data-talk="${esc(c.target_kind)}" data-target="${esc(c.target_id || "")}" data-label="${esc(c.target_label)}">${esc(c.target_label)}</button>` : ""}: ${esc(c.body.length > 140 ? `${c.body.slice(0, 140)}…` : c.body)} <span class="p-muted">${esc(relTime(c.created_at))}</span></li>`).join("")}</ul>` : `<p class="p-muted">Comment on any figure, property or finding with the speech-bubble button.</p>`}
+        ${talk("model", null, "The model")}</div>
+      <div><h4 class="room-sub">Versions</h4>${d.snapshots.length ? `<ul class="pm-recent">${d.snapshots.slice(0, 6).map((s) => `<li><b>${esc(s.label)}</b> · ${esc(fmtDate(s.created_at, { month: "short", day: "numeric", year: "numeric" }))} <button type="button" class="p-linkbtn" data-snap-csv="${esc(s.id)}">CSV</button></li>`).join("")}</ul>` : `<p class="p-muted">Save a dated copy before sending figures to the lender or the CPA: the button is in the header.</p>`}</div>
+    </div>`;
+  }
+
+  /* ------------------------------------------------------------ sections */
+  // Each section has a one-line summary that stands for it when it is closed. The summary view
+  // shows the five sections a client or a lender reads, open; the working view shows them all.
+  const SECTIONS = [
+    ["open", "Still open", openItems], ["entities", "The books, by entity", entities], ["adjustments", "Adjustments and the book-to-tax bridge", adjustments],
+    ["properties", "Properties and cost segregation", properties], ["taxes", "The owner's taxes", taxes], ["global", "Global cash flow and coverage", global],
+    ["inputs", "Assumptions", assumptions], ["personal", "Personal and marital", personal], ["findings", "Findings", findings], ["discussion", "Discussion and versions", discussion],
+  ];
+  const SHORT = { open: "Open", entities: "Books", adjustments: "Adjustments", properties: "Properties", taxes: "Taxes", global: "Coverage", inputs: "Assumptions", personal: "Personal", findings: "Findings", discussion: "Discussion" };
+  const SUMMARY_SECTIONS = ["open", "global", "taxes", "properties", "findings"];
+  const sectionsShown = () => (view === "summary" ? SECTIONS.filter(([k]) => SUMMARY_SECTIONS.includes(k)) : SECTIONS);
+  function sectionSummary(key) {
+    const r = result, g = r.global, n = (x) => (x == null ? "—" : money(x)), plural = (c, w) => `${c} ${w}${c === 1 ? "" : "s"}`;
+    const mineInputs = d.inputs.filter((i) => i.owner_id === me && i.status !== "confirmed").length;
+    const mineFindings = d.findings.filter((f) => f.owner_id === me && f.status !== "resolved").length;
+    switch (key) {
+      case "open": return `${d.inputs.filter((i) => i.status === "confirmed").length} of ${d.inputs.length} assumptions confirmed${mineInputs ? ` · <b>${mineInputs} for you</b>` : ""}${r.missing.length ? ` · ${plural(r.missing.length, "figure")} still needed` : ""}`;
+      case "entities": return r.entities.map((en) => `${esc(en.entity.name)} ${n(en.recurring ?? en.latest?.cfadsAnnual)}`).join(" · ") || "No entities yet";
+      case "adjustments": { const ev = d.adjustments.filter((a) => ["evidenced", "approved"].includes(a.evidence_status)).length, pr = d.adjustments.filter((a) => a.evidence_status === "proposed").length; return `${plural(d.adjustments.length, "item")} · ${ev} evidenced · ${pr} proposed · unexplained ${r.bridgeRemaining > 1 ? n(r.bridgeRemaining) : "none"}`; }
+      case "properties": return `${r.properties.length} propert${r.properties.length === 1 ? "y" : "ies"} · ${n(r.seg.usable)} usable in ${r.study}${r.seg.suspended ? ` (${n(r.seg.suspended)} suspended)` : ""} · ${n(r.seg.taxSaved)} of tax saved`;
+      case "taxes": return `${r.tax.focus.year} estimate ${n(r.tax.focus.total)} · ${r.tax.studyBase.year}: ${n(r.tax.studyBase.total)} before the study, ${n(r.tax.studySeg.total)} with it`;
+      case "global": return `Coverage ${times(g.dscr)} against ${times(g.target)}${g.withProject ? ` · with the project ${times(g.withProject.dscr)}` : ""}`;
+      case "inputs": return `${d.inputs.filter((i) => i.status === "confirmed").length} of ${d.inputs.length} confirmed${mineInputs ? ` · <b>${mineInputs} for you</b>` : ""}`;
+      case "personal": { const items = d.personal || [], needed = items.filter((i) => i.status === "needed").length; return `${plural(items.length, "item")}${needed ? ` · <b>${needed} needed</b>` : ""}`; }
+      case "findings": return `${r.findings.open} open of ${r.findings.total}${r.findings.critical ? ` · ${r.findings.critical} critical` : ""}${mineFindings ? ` · <b>${mineFindings} for you</b>` : ""}`;
+      case "discussion": return `${plural(d.comments.length, "comment")} · ${plural(d.snapshots.length, "version")}`;
+      default: return "";
+    }
+  }
+  function section([key, label, body]) {
+    const open = view === "summary" || openSecs.has(key);
+    const fixed = view === "summary";
+    return `<section class="pm-part om-sec${open ? " is-open" : ""}${fixed ? " is-fixed" : ""}" id="om-s-${key}" data-sec="${key}">
+      <div class="om-sec__head"${fixed ? "" : ` data-sec-head="${key}"`}>${fixed ? "" : `<button type="button" class="om-toggle" data-toggle="${key}" aria-expanded="${open}" aria-controls="om-b-${key}" aria-label="${open ? "Close" : "Open"} ${esc(label)}"><span class="om-chev" aria-hidden="true"></span></button>`}<h3 class="pm-h">${label}</h3><span class="om-sec__sum" data-sec-sum="${key}">${sectionSummary(key)}</span></div>
+      <div class="om-sec__body" id="om-b-${key}"${open ? "" : " hidden"}>${body()}</div>
+    </section>`;
+  }
+  function bar() {
+    return `<nav class="om-bar" aria-label="Sections of the model"><div class="om-bar__inner">
+      <div class="om-bar__links">${sectionsShown().map(([k]) => `<button type="button" data-jump="${k}">${SHORT[k]}</button>`).join("")}</div>
+      <div class="pm-scen om-view" role="radiogroup" aria-label="View"><button type="button" role="radio" aria-checked="${view === "summary"}" data-view="summary">Summary</button><button type="button" role="radio" aria-checked="${view === "working"}" data-view="working">Working</button></div>
+    </div></nav>`;
+  }
+  /** Which section is under the bar; the bar's link for it is marked. */
+  function markCurrent() {
+    const barEl = el.querySelector(".om-bar");
+    if (!barEl) return;
+    const bottom = barEl.getBoundingClientRect().bottom + 8;
+    let current = null;
+    for (const sec of el.querySelectorAll(".om-sec")) if (sec.getBoundingClientRect().top <= bottom) current = sec.dataset.sec;
+    for (const b of barEl.querySelectorAll("[data-jump]")) b.classList.toggle("is-current", b.dataset.jump === current);
+  }
+  function setSection(key, open) {
+    const sec = el.querySelector(`#om-s-${key}`);
+    if (!sec) return;
+    sec.classList.toggle("is-open", open);
+    const body = sec.querySelector(".om-sec__body"); if (body) body.hidden = !open;
+    const t = sec.querySelector("[data-toggle]"); if (t) { t.setAttribute("aria-expanded", String(open)); t.setAttribute("aria-label", `${open ? "Close" : "Open"} ${t.getAttribute("aria-label").replace(/^(Open|Close) /, "")}`); }
+    if (open) openSecs.add(key); else openSecs.delete(key);
+    remember("open", [...openSecs]);
+  }
+  function setProp(id, open) {
+    const card = el.querySelector(`.om-prop[data-prop="${CSS.escape(id)}"]`);
+    if (!card) return;
+    card.classList.toggle("is-open", open);
+    const body = card.querySelector(".om-prop__body"); if (body) body.hidden = !open;
+    const t = card.querySelector("[data-prop-toggle]"); if (t) { t.setAttribute("aria-expanded", String(open)); t.setAttribute("aria-label", t.getAttribute("aria-label").replace(/^(Show|Hide)/, open ? "Hide" : "Show")); }
+    if (open) openProps.add(id); else openProps.delete(id);
+    remember("props", [...openProps]);
+  }
+
   function commentsPanel() {
     if (!thread) return "";
     const list = d.comments.filter((c) => c.target_kind === thread.kind && (c.target_id || null) === (thread.id || null));
@@ -403,37 +509,27 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
 
   function render() {
     compute();
-    const recent = d.comments.slice(-4).reverse();
-    el.innerHTML = `<div class="pm om">
+    const header = document.getElementById("p-header");
+    if (header) document.documentElement.style.setProperty("--p-header-h", `${header.offsetHeight}px`);
+    el.innerHTML = `<div class="pm om om--${view}">
       <header class="pm-head">
         <div class="sov-print-brand" aria-hidden="true"><img src="../assets/img/sypher-mark-sm.webp" alt="" width="46" height="48"><span>SYPHER <small>Solutions</small></span></div>
         <div class="pm-head__row"><div><p class="p-kicker">Owner model</p><h2 class="sov-title">${esc(model.title)}</h2>
           <p class="p-muted">${esc(model.owner_name ? `${model.owner_name}: ` : "")}the businesses, the properties and the taxes, normalized the way a lender and a CPA read them. Updated ${esc(relTime(model.updated_at))}.</p></div>
-          <div class="pm-head__side">${model.pm_model_id ? `<a class="p-linkbtn" href="${esc(projectHref)}">Project model</a>` : ""}<span class="sov-live${live ? " is-on" : ""}" data-live>${live ? "Live" : "Connecting…"}</span></div></div>
+          <div class="pm-head__side">${model.pm_model_id ? `<a class="p-linkbtn" href="${esc(projectHref)}">Project model</a>` : ""}${role !== "viewer" ? `<button type="button" class="p-linkbtn" data-snapshot>Save a version</button>` : ""}<button type="button" class="p-linkbtn" data-csv>CSV</button><button type="button" class="p-linkbtn" data-print>Print</button><span class="sov-live${live ? " is-on" : ""}" data-live>${live ? "Live" : "Connecting…"}</span></div></div>
         ${kpis()}
       </header>
-      <section class="pm-part"><div class="p-row"><h3 class="pm-h">Still open</h3><span class="p-muted">${d.inputs.filter((i) => i.status === "confirmed").length} of ${d.inputs.length} assumptions confirmed</span></div>${openItems()}</section>
-      <section class="pm-part"><div class="p-row"><h3 class="pm-h">The books, by entity</h3><span class="p-muted">As reported, with the filed return beside them</span></div>${entities()}</section>
-      <section class="pm-part"><h3 class="pm-h">Adjustments and the book-to-tax bridge</h3>${adjustments()}</section>
-      <section class="pm-part"><div class="p-row"><h3 class="pm-h">Properties and cost segregation</h3><span class="p-muted">Study year ${result.study}</span></div>${properties()}</section>
-      <section class="pm-part"><h3 class="pm-h">The owner's taxes</h3>${taxes()}</section>
-      <section class="pm-part"><h3 class="pm-h">Global cash flow and coverage</h3>${global()}</section>
-      <section class="pm-part"><h3 class="pm-h">Assumptions</h3><p class="p-muted pm-note">Each has a status and the person who should confirm it. ${admin ? "Assign someone and press Ask: they get a request and set the value here." : "You can set the ones assigned to you; every change is logged."}</p>${assumptions()}</section>
-      <section class="pm-part"><h3 class="pm-h">Personal and marital</h3>${personal()}</section>
-      <section class="pm-part"><h3 class="pm-h">Findings</h3>${findings()}</section>
-      <section class="pm-part pm-foot">
-        <div><h3 class="pm-h">Discussion</h3>${recent.length ? `<ul class="pm-recent">${recent.map((c) => `<li><b>${esc(c.author_id === me ? "You" : nameOf(c.author_id))}</b>${c.target_label ? ` on <button type="button" class="p-linkbtn pm-recent__on" data-talk="${esc(c.target_kind)}" data-target="${esc(c.target_id || "")}" data-label="${esc(c.target_label)}">${esc(c.target_label)}</button>` : ""}: ${esc(c.body.length > 140 ? `${c.body.slice(0, 140)}…` : c.body)} <span class="p-muted">${esc(relTime(c.created_at))}</span></li>`).join("")}</ul>` : `<p class="p-muted">Comment on any figure, property or finding with the speech-bubble button.</p>`}
-          ${talk("model", null, "The model")}</div>
-        <div><h3 class="pm-h">Versions</h3>${d.snapshots.length ? `<ul class="pm-recent">${d.snapshots.slice(0, 6).map((s) => `<li><b>${esc(s.label)}</b> · ${esc(fmtDate(s.created_at, { month: "short", day: "numeric", year: "numeric" }))} <button type="button" class="p-linkbtn" data-snap-csv="${esc(s.id)}">CSV</button></li>`).join("")}</ul>` : `<p class="p-muted">Save a dated copy before sending figures to the lender or the CPA.</p>`}
-          <div class="btn-row">${role !== "viewer" ? `<button type="button" class="btn btn--ghost btn--sm" data-snapshot>Save a version</button>` : ""}<button type="button" class="p-linkbtn" data-csv>Download CSV</button><button type="button" class="p-linkbtn" data-print>Print / PDF</button></div></div>
-      </section>
+      ${bar()}
+      ${view === "summary" ? `<p class="om-view__note p-muted">The summary: what is still open, the coverage, the taxes, the properties and the findings that matter. <button type="button" class="p-linkbtn" data-view="working">Open the working view</button> for the books, the adjustments, every assumption and the personal section.</p>` : ""}
+      ${sectionsShown().map(section).join("")}
       ${commentsPanel()}
     </div>`;
+    markCurrent();
   }
 
   /** Repaint what follows from the figures. Parts someone is typing in keep their fields and
    *  only their computed cells change. */
-  const PARTS = { kpis, open: openItems, entities, adjustments, properties, taxes, global, inputs: assumptions, personal, findings };
+  const PARTS = { kpis, open: openItems, entities, adjustments, properties, taxes, global, inputs: assumptions, personal, findings, discussion };
   function paintDerived() {
     compute();
     const active = document.activeElement;
@@ -445,6 +541,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       tpl.innerHTML = fn();
       for (const c of tpl.content.querySelectorAll("[data-calc]")) { const cur = n.querySelector(`[data-calc="${CSS.escape(c.dataset.calc)}"]`); if (cur) cur.innerHTML = c.innerHTML; }
     }
+    for (const sum of el.querySelectorAll("[data-sec-sum]")) sum.innerHTML = sectionSummary(sum.dataset.secSum);
   }
   function repaint() {
     if (el.contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) { deferred = true; return; }
@@ -523,12 +620,23 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
   const base = () => ({ model_id: modelId, engagement_id: model.engagement_id });
   on("click", async (e) => {
     const b = e.target.closest("button");
-    if (!b) return;
+    if (!b) {
+      // The head row of a section or a property card toggles it, unless a control was clicked.
+      if (e.target.closest("input, select, textarea, a, label")) return;
+      const sh = e.target.closest("[data-sec-head]"); if (sh) { setSection(sh.dataset.secHead, !openSecs.has(sh.dataset.secHead)); return; }
+      const ph = e.target.closest("[data-prop-head]"); if (ph) { setProp(ph.dataset.propHead, !openProps.has(ph.dataset.propHead)); return; }
+      return;
+    }
     try {
+      if (b.dataset.toggle) { setSection(b.dataset.toggle, !openSecs.has(b.dataset.toggle)); return; }
+      if (b.dataset.propToggle) { setProp(b.dataset.propToggle, !openProps.has(b.dataset.propToggle)); return; }
+      if (b.dataset.jump) { setSection(b.dataset.jump, true); el.querySelector(`#om-s-${b.dataset.jump}`)?.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
+      if (b.dataset.view) { if (b.dataset.view !== view) { view = b.dataset.view; remember("view", view); render(); el.scrollIntoView({ block: "start" }); } return; }
+      if (b.dataset.allFindings) { allFindings = b.dataset.allFindings === "1"; remember("allFindings", allFindings); const y = window.scrollY; render(); window.scrollTo(0, y); return; }
+      if (b.dataset.goto) { const n = document.getElementById(b.dataset.goto); const sec = n?.closest(".om-sec"); if (sec) setSection(sec.dataset.sec, true); const card = n?.closest(".om-prop"); if (card) setProp(card.dataset.prop, true); n?.scrollIntoView({ block: "center" }); n?.focus(); n?.closest("li")?.classList.add("is-flash"); return; }
       if (b.dataset.talk) { thread = { kind: b.dataset.talk, id: b.dataset.target || null, label: b.dataset.label }; render(); el.querySelector("#om-comment")?.focus(); return; }
       if (b.hasAttribute("data-close-thread")) { thread = null; render(); return; }
       if (b.dataset.delComment) { await store.omDeleteComment(b.dataset.delComment); d.comments = d.comments.filter((c) => c.id !== b.dataset.delComment); render(); return; }
-      if (b.dataset.goto) { const n = document.getElementById(b.dataset.goto); n?.scrollIntoView({ block: "center" }); n?.focus(); n?.closest("li")?.classList.add("is-flash"); return; }
       if (b.hasAttribute("data-add-entity")) {
         const name = await promptDialog({ title: "Add an entity", label: "Name", confirmLabel: "Add", required: true, multiline: false });
         if (!name) return;
@@ -649,6 +757,9 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
 
   await load();
   render();
+  let scrollRaf = 0;
+  const onScroll = () => { if (!scrollRaf) scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; markCurrent(); }); };
+  window.addEventListener("scroll", onScroll, { passive: true });
   const filters = ["om_entities", "om_periods", "om_adjustments", "om_properties", "om_components", "om_findings", "om_inputs", "om_personal", "om_comments"].map((table) => ({ table, filter: `model_id=eq.${modelId}` }));
   if (model.pm_model_id) filters.push({ table: "pm_inputs", filter: `model_id=eq.${model.pm_model_id}` });
   store.subscribe(`om-${modelId}`, filters, (ev) => (ev.table === "pm_inputs" ? reloadSoon() : onRemote(ev)), (status) => {
@@ -657,7 +768,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     if (n) { n.classList.toggle("is-on", live); n.textContent = live ? "Live" : "Connecting…"; }
   }).then((u) => { if (destroyed) u(); else unsub = u; }).catch(() => {});
 
-  return { get result() { return result; }, destroy() { destroyed = true; unsub?.(); for (const t of timers.values()) clearTimeout(t); } };
+  return { get result() { return result; }, destroy() { destroyed = true; unsub?.(); window.removeEventListener("scroll", onScroll); for (const t of timers.values()) clearTimeout(t); } };
 }
 
 /** A short summary for Home and admin cards (no DOM). */
