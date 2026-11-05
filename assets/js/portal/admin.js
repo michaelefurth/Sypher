@@ -151,6 +151,8 @@ async function viewEngagement(id, tab = "today") {
   const [requestFiles, sheets, budgetRows] = await Promise.all([store.requestFiles(id).catch(() => []), store.sovSheets(id).catch(() => []), store.sovBudget(id).catch(() => [])]);
   const sheetLines = await Promise.all(sheets.map((x) => store.sovLines(x.id).catch(() => [])));
   const models = await store.pmModels(id).catch(() => []);
+  const inbox = await store.inboxDocuments(id).catch(() => []);
+  window.__inbox = inbox;
   const summaries = await Promise.all(models.map((m) => modelSummary(m.id).catch(() => null)));
   const owners = await store.omModels(id).catch(() => []);
   const [invoices, billing] = await Promise.all([store.invoices(id).catch(() => []), tab === "billing" ? store.billingProfile(eng.client_id).catch(() => null) : null]);
@@ -454,16 +456,31 @@ async function viewEngagement(id, tab = "today") {
       </form>`, !hasAddr)}
     </section>`;
 
+  cards.inbox = () => !inbox.length ? "" : `<section class="p-card p-card--accent" id="review-inbox"><div class="p-row"><p class="p-kicker">Waiting for your review</p><span class="p-muted">${inbox.length} filed by the assistant</span></div>
+      <p class="p-muted">Only you can see these. Open each one; share it and it moves into ${esc(clientName)}'s Documents like any upload, or discard it.</p>
+      <ul class="doc-list">${inbox.map((d) => `<li class="doc doc--review" data-inbox-item="${esc(d.id)}">
+        <span class="doc__icon" aria-hidden="true">${esc((d.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
+        <div class="doc__body"><p class="doc__title">${fileLabel(d.title)}</p>${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
+          <p class="doc__meta">${fileLabel(d.name)}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}${d.milestone_id && msName.has(d.milestone_id) ? ` · ${esc(msName.get(d.milestone_id))}` : ""} · filed ${esc(relTime(d.created_at))}</p>
+          <div class="review-acts">
+            <button class="p-linkbtn" data-inbox-open="${esc(d.path)}">Open</button>
+            ${members.length ? `<label class="p-check"><input type="checkbox" data-inbox-team${d.suggest_team ? " checked" : ""}> Team can see${d.suggest_team ? " (suggested)" : ""}</label>` : ""}
+            <label class="p-check"><input type="checkbox" data-inbox-notify checked> Email ${esc(clientName)}</label>
+            <button class="btn btn--navy btn--sm" data-inbox-share="${esc(d.id)}">Share</button>
+            <button class="p-linkbtn" data-inbox-discard="${esc(d.id)}">Discard</button>
+          </div></div></li>`).join("")}</ul>
+    </section>`;
+
   const TAB_CARDS = {
     today: [cards.messages, cards.requests, () => cards.activity(8)],
     models: [cards.project, cards.owner, cards.pricing],
-    documents: [cards.deliverables, cards.teamFiles, cards.updates, cards.drafts],
+    documents: [cards.inbox, cards.deliverables, cards.teamFiles, cards.updates, cards.drafts],
     billing: [cards.invoices, cards.billingAddress],
     plan: [cards.milestonesManage, cards.decisions, cards.context, () => cards.activity(40)],
     people: [cards.clientCard, cards.team, cards.teamThread],
     settings: [cards.questionnaires, cards.remove, cards.closeout],
   };
-  const badges = { today: unreadMsgs + toReview, documents: draftsToReview, billing: openInv.length, people: activeMembers.filter((m) => !m.last_seen_at).length };
+  const badges = { today: unreadMsgs + toReview, documents: draftsToReview + inbox.length, billing: openInv.length, people: activeMembers.filter((m) => !m.last_seen_at).length };
   const tabs = `<nav class="room-tabs room-tabs--admin" aria-label="Engagement"><div class="room-tabs__inner">${ENG_TABS.map(([k, label]) => `<a href="#engagement=${esc(id)}/${k}" class="room-tabs__link"${k === tab ? ' aria-current="page"' : ""}>${label}${badges[k] ? `<span class="room-tabs__badge${k === "people" ? " room-tabs__badge--soft" : ""}" aria-label="${badges[k]} ${k === "today" ? "waiting" : k === "documents" ? "to review" : k === "billing" ? "unpaid" : "not signed in yet"}">${badges[k]}</span>` : ""}</a>`).join("")}</div></nav>`;
   return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + `<div class="admin-tabs-anchor" aria-hidden="true"></div>` + tabs + `
     <div class="draft-grid admin-eng">
@@ -848,6 +865,28 @@ main.addEventListener("click", async (e) => {
     else if (t.dataset.deliverableDelete) {
       const d = (await store.deliverables(engagementId())).find((x) => x.id === t.dataset.deliverableDelete);
       if (d && await confirmDialog({ title: "Remove this document?", body: `<p><strong>${esc(d.title)}</strong> is deleted and disappears from the client's Documents.</p>`, confirmLabel: "Remove" })) { await store.deleteDeliverable(d); toast("Removed."); route(); }
+    }
+    else if (t.dataset.inboxOpen) {
+      const win = window.open("", "_blank");
+      try { const url = await store.inboxUrl(t.dataset.inboxOpen); if (win) win.location.href = url; else location.href = url; }
+      catch (err) { if (win) win.close(); throw err; }
+    }
+    else if (t.dataset.inboxShare) {
+      const item = (window.__inbox || []).find((x) => x.id === t.dataset.inboxShare);
+      const li = t.closest("[data-inbox-item]");
+      if (!item || !li) return;
+      const team = !!li.querySelector("[data-inbox-team]")?.checked, notify = !!li.querySelector("[data-inbox-notify]")?.checked;
+      t.disabled = true; t.textContent = "Sharing…";
+      const row = await store.shareInboxDocument(item, { shared_with_team: team });
+      const n = notify ? await store.notify("deliverable", row.id) : null;
+      toastNotice(n, notify ? "Shared. The client has been emailed." : "Shared in the client's Documents.", "Shared in the client's Documents.");
+      route();
+    }
+    else if (t.dataset.inboxDiscard) {
+      const item = (window.__inbox || []).find((x) => x.id === t.dataset.inboxDiscard);
+      if (item && await confirmDialog({ title: "Discard this document?", body: `<p><strong>${esc(item.title)}</strong> is deleted. Nobody else ever saw it.</p>`, confirmLabel: "Discard" })) {
+        await store.discardInboxDocument(item); toast("Discarded."); route();
+      }
     }
     else if (t.dataset.invVoid) {
       if (await confirmDialog({ title: "Void this invoice?", body: "<p>The client can no longer pay it, and Stripe marks it void. This can't be undone; send a new invoice if the amount was wrong.</p>", confirmLabel: "Void" })) {

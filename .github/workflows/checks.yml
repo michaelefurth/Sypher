@@ -53,4 +53,4 @@ jobs:
             deno check --config "$dir/deno.json" "$dir/index.ts"
           done
       - name: deno test (shared helpers)
-        run: deno test supabase/functions/_shared/stripe_test.ts
+        run: deno test supabase/functions/_shared/stripe_test.ts supabase/functions/_shared/agent_test.ts
