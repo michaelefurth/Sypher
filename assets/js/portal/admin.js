@@ -4,7 +4,7 @@
 // An engagement page has six tabs: today (messages, requests, activity), models, documents,
 // plan, people and settings; the next conversation and the milestones stay beside every tab.
 import { store, progressOf, FILE_ACCEPT, checkFile } from "./store.js";
-import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, promptDialog, statusPill, progressBar, download } from "./ui.js";
+import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, toastNotice, confirmDialog, promptDialog, statusPill, progressBar, download } from "./ui.js";
 import { SOV_TEMPLATES, sovTotals, sheetPill, money } from "./sov.js";
 import { mountBell } from "./bell.js";
 import { createFromTemplate, modelSummary } from "./model.js";
@@ -591,8 +591,8 @@ main.addEventListener("submit", async (e) => {
     if (form.id === "msg-form") {
       const body = form.body.value.trim();
       if (!body) return;
-      await store.postMessage(engId, body);
-      toast("Sent. The client has been emailed.");
+      const row = await store.postMessage(engId, body);
+      toastNotice(row.notice, "Sent. The client has been emailed.", "Sent.");
       await route();
       document.getElementById("msg-body")?.focus();
       const th = document.getElementById("thread"); if (th) th.scrollTop = th.scrollHeight;
@@ -600,8 +600,8 @@ main.addEventListener("submit", async (e) => {
     } else if (form.id === "team-msg-form") {
       const body = form.body.value.trim();
       if (!body) return;
-      await store.postMessage(engId, body, "team");
-      toast("Sent to the team.");
+      const sentRow = await store.postMessage(engId, body, "team");
+      toastNotice(sentRow.notice, "Sent to the team.", "Sent.");
       await route();
       const th = document.getElementById("team-thread"); if (th) th.scrollTop = th.scrollHeight;
       return;
@@ -610,14 +610,15 @@ main.addEventListener("submit", async (e) => {
       const days = v("length");
       const r = await store.inviteMember({ engagement_id: engId, email: v("email"), full_name: v("full_name"), role_label: v("role_label") || null, organization: v("organization") || null,
         can_message: form.can_message.checked, can_files: form.can_files.checked, expires_at: days ? new Date(Date.now() + Number(days) * 864e5).toISOString() : null });
-      toast(r.invited ? `Invitation sent to ${v("email")}.` : `${v("full_name")} already had an account and has been added.`);
+      if (r.emailed === false) toastNotice({ reason: "email failed" }, "", `${v("full_name")} has been added.`);
+      else toast(r.invited ? `Invitation sent to ${v("email")}.` : `${v("full_name")} already had an account and has been added.`);
       route();
     } else if (form.id === "action-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const existing = await store.actionItems(engId);
       const row = await store.addActionItem({ engagement_id: engId, kind: v("kind"), title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: existing.length + 1 });
-      if (form.notify.checked) store.notify("action_item", row.id);
-      toast(form.notify.checked ? "Sent. They've been emailed." : "Request added.");
+      const n = form.notify.checked ? await store.notify("action_item", row.id) : null;
+      toastNotice(n, form.notify.checked ? "Sent. They've been emailed." : "Request added.", "Request added.");
       route();
     } else if (form.id === "model-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
@@ -639,12 +640,13 @@ main.addEventListener("submit", async (e) => {
       if (tpl.lines.length) {
         await store.sovInsertLines(tpl.lines.map(([section, code, description, hint], i) => ({ sheet_id: sheet.id, engagement_id: engId, position: i + 1, section, code: code || null, description, hint: hint || null })));
       }
+      let notice = null;
       if (contractor) {
         const req = await store.addActionItem({ engagement_id: engId, kind: "pricing", link_ref: sheet.id, assignee_id: contractor, title: `Price the schedule of values: ${sheet.title}`, due_date: v("due_date") || null, position: 0 });
-        store.notify("action_item", req.id);
+        notice = await store.notify("action_item", req.id);
       }
-      toast(contractor ? "Sheet created. The contractor has been asked and emailed." : "Sheet created.");
-      location.href = `pricing.html?s=${sheet.id}`;
+      const went = toastNotice(notice, contractor ? "Sheet created. The contractor has been asked and emailed." : "Sheet created.", "Sheet created and the contractor asked.");
+      setTimeout(() => { location.href = `pricing.html?s=${sheet.id}`; }, went ? 0 : 4000);
     } else if (form.id === "deliverable-form") {
       const file = form.file.files[0];
       if (!file) throw new Error("Choose a file to share.");
@@ -652,8 +654,8 @@ main.addEventListener("submit", async (e) => {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       if (btn) btn.textContent = "Uploading…";
       const row = await store.uploadDeliverable(engId, { title: v("title") || file.name.replace(/\.[^.]+$/, ""), note: v("note") || null, milestone_id: v("milestone_id") || null, shared_with_team: !!form.team?.checked }, file);
-      if (form.notify.checked) store.notify("deliverable", row.id);
-      toast(form.notify.checked ? "Shared. The client has been emailed." : "Shared in the client's Documents.");
+      const n = form.notify.checked ? await store.notify("deliverable", row.id) : null;
+      toastNotice(n, form.notify.checked ? "Shared. The client has been emailed." : "Shared in the client's Documents.", "Shared in the client's Documents.");
       route();
     } else if (form.id === "room-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
@@ -684,11 +686,11 @@ main.addEventListener("submit", async (e) => {
       route();
     } else if (form.id === "manual-pub") {
       const ok = await confirmDialog({ title: "Publish this update?", body: "<p>The client will see it in their portal and receive an email.</p>", confirmLabel: "Publish" });
-      if (ok) { await store.publish({ engagement_id: engId, ...formData(form) }); toast("Published."); route(); }
+      if (ok) { const r = await store.publish({ engagement_id: engId, ...formData(form) }); toastNotice(r?.emailed === false ? { reason: "email failed" } : null, "Published.", "Published."); route(); }
     } else if (form.id === "publish-form") {
       const d = window.__draft;
       const ok = await confirmDialog({ title: "Approve and publish?", body: "<p>Your message will appear in the client's portal and they'll be emailed. The analysis stays private.</p>", confirmLabel: "Publish" });
-      if (ok) { await store.publish({ engagement_id: d.engagement_id, draft_id: d.id, ...formData(form) }); toast("Published to the client."); route(); }
+      if (ok) { const r = await store.publish({ engagement_id: d.engagement_id, draft_id: d.id, ...formData(form) }); toastNotice(r?.emailed === false ? { reason: "email failed" } : null, "Published to the client.", "Published."); route(); }
     } else if (form.id === "import-form") {
       let text = form.querySelector("#imp-text").value.trim();
       const file = form.querySelector("#imp-file").files[0];
@@ -715,8 +717,8 @@ main.addEventListener("click", async (e) => {
       const note = accept ? null : await promptDialog({ title: "Ask for changes", label: "What needs to change", required: true, confirmLabel: "Send back" });
       if (!accept && !note) return;
       await store.reviewRequest(t.dataset.req, accept, note);
-      store.notify("request_update", t.dataset.req);
-      toast(accept ? "Accepted. They've been told." : "Sent back with your note.");
+      const n = await store.notify("request_update", t.dataset.req);
+      toastNotice(n, accept ? "Accepted. They've been told." : "Sent back with your note.", accept ? "Accepted." : "Sent back.");
       route();
     }
     else if (t.dataset.memberModel) {

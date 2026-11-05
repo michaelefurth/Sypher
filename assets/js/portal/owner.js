@@ -14,7 +14,7 @@
 // until it is opened; a bar under the figures jumps between them. What is open is remembered
 // in the browser.
 import { store } from "./store.js";
-import { esc, fmtDate, relTime, toast, confirmDialog, promptDialog, download } from "./ui.js";
+import { esc, fmtDate, relTime, toast, toastNotice, confirmDialog, promptDialog, download } from "./ui.js";
 import { money, parseNum } from "./sov.js";
 import { calculateOwner, CATEGORIES, SEG_PRESETS, FILING, CURRENT_YEAR, bonusRate, num } from "./owner-calc.js";
 import { modelSummary } from "./model.js";
@@ -129,7 +129,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     if (kind === "bool") return `<label class="p-check om-check"><input type="checkbox" ${a}${value ? " checked" : ""}> <span>${esc(label)}</span></label>`;
     if (kind === "date") return `<input class="pm-in om-date" type="date" ${a} value="${esc(value ?? "")}">`;
     if (kind === "text") return `<input class="pm-in pm-in--label" ${a} value="${esc(value ?? "")}"${width ? ` style="width:${width}"` : ""}>`;
-    if (kind === "area") return `<textarea class="pm-in om-area" rows="2" ${a}>${esc(value ?? "")}</textarea>`;
+    if (kind === "area") return `<textarea class="pm-in om-area" rows="1" ${a}>${esc(value ?? "")}</textarea>`;
     return `<input class="pm-in pm-in--num" ${a} value="${esc(fmtIn(value))}" inputmode="decimal">`;
   };
   const talk = (kind, id, label) => {
@@ -137,6 +137,9 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     return `<button type="button" class="pm-talk${n ? " has" : ""}" data-talk="${kind}" data-target="${esc(id || "")}" data-label="${esc(label)}" aria-label="Comments on ${esc(label)}${n ? `, ${n}` : ""}">${n || ""}<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><path d="M2 3h12v8H6l-3 3v-3H2z"/></svg></button>`;
   };
   const del = (t, id, label) => (admin ? `<button type="button" class="sov-icon sov-icon--del" data-del="${t}" data-id="${esc(id)}" aria-label="Remove ${esc(label)}">×</button>` : "");
+  /** A textarea as tall as its text (only visible ones: a hidden one measures zero). */
+  const grow = (t) => { if (!t.offsetParent) return; t.style.height = "auto"; t.style.height = `${t.scrollHeight + 2}px`; };
+  const growAll = (root = el) => root.querySelectorAll("textarea.om-area").forEach(grow);
   const calc = (key, text, cls = "") => `<span data-calc="${esc(key)}"${cls ? ` class="${cls}"` : ""}>${text}</span>`;
 
   /* -------------------------------------------------------------- pieces */
@@ -199,7 +202,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           ${calcRow("corr", "Corrections to the return (change in taxable income)", (p) => p.corrections || null)}
           ${calcRow("corrected", "Net profit as it should have been filed", (p) => (p.corrections ? p.correctedTaxNet : null))}
           ${rowOf("cash", "Cash at period end")}${rowOf("total_assets", "Total assets")}${rowOf("total_liabilities", "Total liabilities")}
-          ${admin ? `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td>${field("om_periods", row.id, "source", row.source, { kind: "text", label: "Source" })}${field("om_periods", row.id, "confidence", row.confidence, { options: CONF, label: "Confidence" })}</td>`; }).join("")}</tr>` : `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td class="pm-sub">${esc(row.source || "")}${row.confidence !== "firm" ? ` (${row.confidence})` : ""}</td>`; }).join("")}</tr>`}
+          ${admin ? `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td>${field("om_periods", row.id, "source", row.source, { kind: "area", label: "Source" })}${field("om_periods", row.id, "confidence", row.confidence, { options: CONF, label: "Confidence" })}</td>`; }).join("")}</tr>` : `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td class="pm-sub">${esc(row.source || "")}${row.confidence !== "firm" ? ` (${row.confidence})` : ""}</td>`; }).join("")}</tr>`}
         </tbody></table></div>` : `<p class="p-muted">No periods yet.${admin ? " Add one for each year of books." : ""}</p>`}
       </div>`;
     }).join("");
@@ -212,7 +215,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     const r = (a) => `<tr class="om-adj is-${esc(a.evidence_status)}">
       <td>${field("om_adjustments", a.id, "entity_id", a.entity_id || "", { options: entOpts, label: "Entity" })}</td>
       <td>${field("om_adjustments", a.id, "period", a.period, { kind: "text", label: "Period", width: "5.5rem" })}</td>
-      <td>${field("om_adjustments", a.id, "label", a.label, { kind: "text", label: "Item" })}${a.source || admin ? `<span class="pm-sub">${admin ? field("om_adjustments", a.id, "source", a.source, { kind: "text", label: "Source" }) : esc(a.source)}</span>` : ""}</td>
+      <td class="om-adj__item">${admin ? field("om_adjustments", a.id, "label", a.label, { kind: "area", label: "Item" }) : esc(a.label)}${a.source || admin ? `<span class="pm-sub">${admin ? field("om_adjustments", a.id, "source", a.source, { kind: "area", label: "Source" }) : esc(a.source)}</span>` : ""}</td>
       <td>${field("om_adjustments", a.id, "kind", a.kind, { options: ADJ_KIND, label: "Kind" })}</td>
       <td>${field("om_adjustments", a.id, "applies_to", a.applies_to, { options: ADJ_TO, label: "Applies to" })}</td>
       <td class="pm-c-num">${field("om_adjustments", a.id, "amount", a.amount, { label: "Amount" })}</td>
@@ -232,12 +235,14 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       const yrs = [result.study - 1, result.study, result.study + 1, result.study + 2, result.study + 3];
       const compRow = (c) => {
         const rc = s.components.find((x) => x.id === c.id);
-        return `<tr><td>${field("om_components", c.id, "category", c.category, { options: Object.entries(CATEGORIES).map(([k, v]) => [k, v.label]), label: "Class" })}${admin ? field("om_components", c.id, "label", c.label, { kind: "text", label: "Description" }) : c.label ? `<span class="pm-sub">${esc(c.label)}</span>` : ""}</td>
+        const before = rc ? Object.entries(rc.sched).filter(([y]) => Number(y) < result.study).reduce((t, [, v]) => t + (v || 0), 0) : null;
+        return `<tr><td class="om-comp__class">${field("om_components", c.id, "category", c.category, { options: Object.entries(CATEGORIES).map(([k, v]) => [k, v.label]), label: "Class" })}${admin ? field("om_components", c.id, "label", c.label, { kind: "area", label: "Description" }) : c.label ? `<span class="pm-sub">${esc(c.label)}</span>` : ""}</td>
           <td class="pm-c-num">${field("om_components", c.id, "pct", c.pct, { label: "Share of basis %" })}</td>
           <td class="pm-c-num">${field("om_components", c.id, "amount", c.amount, { label: "Fixed amount" })}</td>
           <td>${field("om_components", c.id, "placed_in_service", c.placed_in_service, { kind: "date", label: "Placed in service" })}</td>
           <td class="pm-c-num">${calc(`c:${c.id}:amt`, rc ? money(rc.amount) : "—")}</td>
           <td class="pm-c-num">${calc(`c:${c.id}:bonus`, rc ? pct(rc.bonus, 0) : "—")}</td>
+          <td class="pm-c-num">${calc(`c:${c.id}:pre`, before == null ? "—" : money(before))}</td>
           <td class="pm-c-num">${calc(`c:${c.id}:y1`, rc ? money(rc.sched[result.study] || 0) : "—")}</td>
           <td>${field("om_components", c.id, "confidence", c.confidence, { options: CONF, label: "Confidence" })}</td>
           <td class="pm-c-act">${talk("component", c.id, c.label || CATEGORIES[c.category]?.label)}${del("om_components", c.id, c.label || "component")}</td></tr>`;
@@ -246,7 +251,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           <label class="om-inline">Use ${field("om_properties", p.id, "use", p.use, { options: USES, label: "Use" })}</label>
           <label class="om-inline">Rent from ${field("om_properties", p.id, "rent_source", p.rent_source, { options: RENT, label: "Rent source" })}</label>
           <label class="om-inline">Used by ${field("om_properties", p.id, "used_by_entity_id", p.used_by_entity_id || "", { options: entOpts, label: "Used by" })}</label>
-          <label class="om-inline">Tenant ${field("om_properties", p.id, "tenant", p.tenant, { kind: "text", label: "Tenant" })}</label>
+          <label class="om-inline">Tenant ${field("om_properties", p.id, "tenant", p.tenant, { kind: "area", label: "Tenant" })}</label>
           <label class="om-inline">Acquired ${field("om_properties", p.id, "acquired", p.acquired, { kind: "date", label: "Acquired" })}</label>
           <label class="om-inline">Placed in service ${field("om_properties", p.id, "placed_in_service", p.placed_in_service, { kind: "date", label: "Placed in service" })}</label>
           ${PROP_NUM.map(([f, l]) => `<label class="om-inline">${l} ${field("om_properties", p.id, f, p[f], { label: l })}</label>`).join("")}
@@ -255,7 +260,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           ${field("om_properties", p.id, "se_business", p.se_business, { kind: "bool", label: "Used in the owner's own trade (deduction against business income)" })}
           ${field("om_properties", p.id, "passive", p.passive, { kind: "bool", label: "Passive rental (losses limited)" })}
           ${field("om_properties", p.id, "bonus_elected_out", p.bonus_elected_out, { kind: "bool", label: "Elected out of bonus depreciation" })}
-          <label class="om-inline om-inline--wide">Note ${field("om_properties", p.id, "note", p.note, { kind: "text", label: "Note" })}</label>
+          <label class="om-inline om-inline--wide">Note ${field("om_properties", p.id, "note", p.note, { kind: "area", label: "Note" })}</label>
         </div>` : `<dl class="om-prop__facts">
           <div><dt>Use</dt><dd>${esc(USES.find(([k]) => k === p.use)?.[1] || p.use)}</dd></div><div><dt>Rent</dt><dd>${esc(RENT.find(([k]) => k === p.rent_source)?.[1])}${p.tenant ? ` · ${esc(p.tenant)}` : ""}</dd></div>
           <div><dt>Acquired</dt><dd>${p.acquired ? esc(fmtDate(p.acquired, { month: "short", year: "numeric" })) : "—"}</dd></div><div><dt>Cost basis</dt><dd>${p.cost_basis == null ? "—" : money(Number(p.cost_basis))}</dd></div>
@@ -281,13 +286,13 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       if (view === "summary") return `<div class="om-prop om-prop--line" data-prop="${esc(p.id)}"><div class="om-prop__head"><h4 class="room-sub">${esc(p.label)}${address}</h4>${line}<span class="om-prop__acts">${talk("property", p.id, p.label)}</span></div></div>`;
       const open = openProps.has(p.id);
       return `<div class="om-prop${open ? " is-open" : ""}" data-prop="${esc(p.id)}">
-        <div class="om-prop__head" data-prop-head="${esc(p.id)}"><button type="button" class="om-toggle" data-prop-toggle="${esc(p.id)}" aria-expanded="${open}" aria-controls="om-p-${esc(p.id)}" aria-label="${open ? "Hide" : "Show"} the detail of ${esc(p.label)}"><span class="om-chev" aria-hidden="true"></span></button><h4 class="room-sub">${admin ? field("om_properties", p.id, "label", p.label, { kind: "text", label: "Property", width: "18rem" }) : esc(p.label)}${address}</h4>${line}<span class="om-prop__acts">${talk("property", p.id, p.label)}${del("om_properties", p.id, p.label)}</span></div>
+        <div class="om-prop__head" data-prop-head="${esc(p.id)}"><button type="button" class="om-toggle" data-prop-toggle="${esc(p.id)}" aria-expanded="${open}" aria-controls="om-p-${esc(p.id)}" aria-label="${open ? "Hide" : "Show"} the detail of ${esc(p.label)}"><span class="om-chev" aria-hidden="true"></span></button><h4 class="room-sub">${admin ? field("om_properties", p.id, "label", p.label, { kind: "text", label: "Property", width: "min(34rem, 70vw)" }) : esc(p.label)}${address}</h4>${line}<span class="om-prop__acts">${talk("property", p.id, p.label)}${del("om_properties", p.id, p.label)}</span></div>
         <div class="om-prop__body" id="om-p-${esc(p.id)}"${open ? "" : " hidden"}>
         ${fields}
         ${s.missing.length ? `<p class="pm-open__mine">Needed before depreciation can be shown: ${s.missing.map(esc).join(", ")}.</p>` : ""}
         ${strip}
         <div class="p-row"><h5 class="om-h5">Cost segregation components</h5>${presets}</div>
-        ${comps.length ? `<div class="pm-wrap"><table class="pm-table om-table om-table--comp"><thead><tr><th scope="col">Class</th><th class="pm-c-num" scope="col">Share of basis</th><th class="pm-c-num" scope="col">Or amount</th><th scope="col">Placed in service</th><th class="pm-c-num" scope="col">Basis</th><th class="pm-c-num" scope="col">Bonus</th><th class="pm-c-num" scope="col">${result.study} deduction</th><th scope="col">Confidence</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead><tbody>${comps.map(compRow).join("")}</tbody></table></div>` : `<p class="p-muted">No components yet: the whole building depreciates straight line.${admin ? " Apply a typical split or add a component." : ""}</p>`}
+        ${comps.length ? `<div class="pm-wrap"><table class="pm-table om-table om-table--comp"><thead><tr><th scope="col">Class</th><th class="pm-c-num" scope="col">Share of basis</th><th class="pm-c-num" scope="col">Or amount</th><th scope="col">Placed in service</th><th class="pm-c-num" scope="col">Basis</th><th class="pm-c-num" scope="col">Bonus</th><th class="pm-c-num" scope="col">Allowable through ${result.study - 1}<span class="pm-sub">the catch-up</span></th><th class="pm-c-num" scope="col">${result.study} deduction<span class="pm-sub">regular</span></th><th scope="col">Confidence</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead><tbody>${comps.map(compRow).join("")}</tbody></table></div>` : `<p class="p-muted">No components yet: the whole building depreciates straight line.${admin ? " Apply a typical split or add a component." : ""}</p>`}
         ${admin ? `<p><button type="button" class="p-linkbtn" data-add-comp="${esc(p.id)}">+ Add a component</button></p>` : ""}
         ${sched}
         </div>
@@ -337,13 +342,13 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     const sections = [...new Set(d.inputs.map((i) => i.section))];
     const lastBy = new Map();
     for (const e of log) if (!lastBy.has(e.input_id)) lastBy.set(e.input_id, e);
-    const shown = (i) => (i.unit === "text" ? esc(i.text_value || "—") : i.value == null ? "—" : i.unit === "usd" ? money(Number(i.value)) : `${NF2.format(Number(i.value))}${UNIT_SUFFIX[i.unit] || ""}`);
+    const shown = (i) => (i.unit === "text" ? esc(i.text_value || "—") : i.value == null ? "—" : i.unit === "usd" ? money(Number(i.value)) : i.unit === "count" ? String(Number(i.value)) : `${NF2.format(Number(i.value))}${UNIT_SUFFIX[i.unit] || ""}`);
     return `<div data-part="inputs">${sections.map((sec) => `<div class="pm-sec"><h4 class="room-sub">${esc(sec)}</h4><ul class="pm-inputs">${d.inputs.filter((i) => i.section === sec).map((i) => {
       const e = lastBy.get(i.id), can = canSet(i);
       const valueField = can
         ? (i.key === "filing_status"
           ? `<span class="pm-val"><select class="pm-in pm-in--sel pm-in--val" id="input-${esc(i.id)}" data-input="${esc(i.id)}" data-field="value" aria-label="${esc(i.label)}">${FILING.map(([k, t]) => `<option value="${k}"${(i.text_value || "single") === k ? " selected" : ""}>${t}</option>`).join("")}</select></span>`
-          : `<span class="pm-val"><input class="pm-in pm-in--val" id="input-${esc(i.id)}" data-input="${esc(i.id)}" data-field="value" value="${esc(i.unit === "text" ? i.text_value || "" : i.value == null ? "" : NF2.format(Number(i.value)))}" ${i.unit === "text" ? "" : 'inputmode="decimal"'} aria-label="${esc(i.label)}">${UNIT_SUFFIX[i.unit] ? `<em>${UNIT_SUFFIX[i.unit].trim()}</em>` : ""}</span>`)
+          : `<span class="pm-val"><input class="pm-in pm-in--val" id="input-${esc(i.id)}" data-input="${esc(i.id)}" data-field="value" value="${esc(i.unit === "text" ? i.text_value || "" : i.value == null ? "" : i.unit === "count" ? String(Number(i.value)) : NF2.format(Number(i.value)))}" ${i.unit === "text" ? "" : 'inputmode="decimal"'} aria-label="${esc(i.label)}">${UNIT_SUFFIX[i.unit] ? `<em>${UNIT_SUFFIX[i.unit].trim()}</em>` : ""}</span>`)
         : `<span class="pm-val pm-val--ro" id="input-${esc(i.id)}" tabindex="-1">${shown(i)}</span>`;
       const status = can
         ? `<select class="pm-in pm-in--sel pm-st pm-st--${esc(i.status)}" data-input="${esc(i.id)}" data-field="status" aria-label="Status of ${esc(i.label)}">${STATUS.map(([k, t]) => `<option value="${k}"${i.status === k ? " selected" : ""}>${t}</option>`).join("")}</select>`
@@ -383,7 +388,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
         <label>Why it matters ${field("om_findings", f.id, "why", f.why, { kind: "area", label: "Why it matters" })}</label>
         <label>Test ${field("om_findings", f.id, "test", f.test, { kind: "area", label: "Test" })}</label>
         <label>Evidence needed ${field("om_findings", f.id, "evidence", f.evidence, { kind: "area", label: "Evidence needed" })}</label>
-        <label>Resolution ${field("om_findings", f.id, "resolution", f.resolution, { kind: "area", label: "Resolution" })}</label>
+        <label class="om-finding__res">Resolution ${field("om_findings", f.id, "resolution", f.resolution, { kind: "area", label: "Resolution" })}</label>
       </div>` : `<div class="om-finding__body om-finding__body--ro">
         <p><b>${esc(f.observation)}</b></p>${view === "summary" && (f.why || f.test || f.evidence || f.resolution) ? `<details class="om-finding__more"><summary class="p-linkbtn">Why it matters, the test and the evidence</summary>` : ""}${f.why ? `<p><span class="om-lbl">Why it matters</span> ${esc(f.why)}</p>` : ""}${f.test ? `<p><span class="om-lbl">Test</span> ${esc(f.test)}</p>` : ""}${f.evidence ? `<p><span class="om-lbl">Evidence needed</span> ${esc(f.evidence)}</p>` : ""}${f.resolution ? `<p><span class="om-lbl">Resolution</span> ${esc(f.resolution)}</p>` : ""}${view === "summary" && (f.why || f.test || f.evidence || f.resolution) ? "</details>" : ""}
       </div>`}
@@ -399,7 +404,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     const groups = PCAT.filter(([k]) => items.some((i) => i.category === k));
     const money0 = (v) => (v == null ? "—" : money(Number(v)));
     const row = (i) => `<tr class="om-pers is-${esc(i.status)}">
-      <td>${admin ? field("om_personal", i.id, "label", i.label, { kind: "text", label: "Item" }) : `<b>${esc(i.label)}</b>`}${admin ? field("om_personal", i.id, "detail", i.detail, { kind: "area", label: "Detail" }) : i.detail ? `<span class="om-text om-pers__detail">${esc(i.detail)}</span>` : ""}${admin ? field("om_personal", i.id, "note", i.note, { kind: "text", label: "Note" }) : i.note ? `<span class="pm-sub">${esc(i.note)}</span>` : ""}</td>
+      <td>${admin ? field("om_personal", i.id, "label", i.label, { kind: "area", label: "Item" }) : `<b>${esc(i.label)}</b>`}${admin ? field("om_personal", i.id, "detail", i.detail, { kind: "area", label: "Detail" }) : i.detail ? `<span class="om-text om-pers__detail">${esc(i.detail)}</span>` : ""}${admin ? field("om_personal", i.id, "note", i.note, { kind: "area", label: "Note" }) : i.note ? `<span class="pm-sub">${esc(i.note)}</span>` : ""}</td>
       <td class="pm-c-num">${field("om_personal", i.id, "amount", i.amount, { label: "Value" })}</td>
       <td class="pm-c-num">${field("om_personal", i.id, "liability", i.liability, { label: "Owed" })}</td>
       <td>${field("om_personal", i.id, "as_of", i.as_of, { kind: "date", label: "As of" })}</td>
@@ -484,7 +489,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     sec.classList.toggle("is-open", open);
     const body = sec.querySelector(".om-sec__body"); if (body) body.hidden = !open;
     const t = sec.querySelector("[data-toggle]"); if (t) { t.setAttribute("aria-expanded", String(open)); t.setAttribute("aria-label", `${open ? "Close" : "Open"} ${t.getAttribute("aria-label").replace(/^(Open|Close) /, "")}`); }
-    if (open) openSecs.add(key); else openSecs.delete(key);
+    if (open) { openSecs.add(key); growAll(sec); } else openSecs.delete(key);
     remember("open", [...openSecs]);
   }
   function setProp(id, open) {
@@ -493,7 +498,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     card.classList.toggle("is-open", open);
     const body = card.querySelector(".om-prop__body"); if (body) body.hidden = !open;
     const t = card.querySelector("[data-prop-toggle]"); if (t) { t.setAttribute("aria-expanded", String(open)); t.setAttribute("aria-label", t.getAttribute("aria-label").replace(/^(Show|Hide)/, open ? "Hide" : "Show")); }
-    if (open) openProps.add(id); else openProps.delete(id);
+    if (open) { openProps.add(id); growAll(card); } else openProps.delete(id);
     remember("props", [...openProps]);
   }
 
@@ -525,6 +530,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       ${commentsPanel()}
     </div>`;
     markCurrent();
+    growAll();
   }
 
   /** Repaint what follows from the figures. Parts someone is typing in keep their fields and
@@ -542,6 +548,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       for (const c of tpl.content.querySelectorAll("[data-calc]")) { const cur = n.querySelector(`[data-calc="${CSS.escape(c.dataset.calc)}"]`); if (cur) cur.innerHTML = c.innerHTML; }
     }
     for (const sum of el.querySelectorAll("[data-sec-sum]")) sum.innerHTML = sectionSummary(sum.dataset.secSum);
+    growAll();
   }
   function repaint() {
     if (el.contains(document.activeElement) && document.activeElement.matches("input, textarea, select")) { deferred = true; return; }
@@ -592,6 +599,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
   const on = (type, fn) => el.addEventListener(type, fn);
   on("input", (e) => {
     const t = e.target;
+    if (t.matches("textarea.om-area")) grow(t);
     if (t.matches("[data-t]") && t.tagName !== "SELECT" && t.type !== "checkbox" && t.type !== "date") onRowInput(t);
     else if (t.matches("[data-input]") && t.tagName === "INPUT") onInputInput(t);
   });
@@ -705,14 +713,14 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
         const i = d.inputs.find((x) => x.id === b.dataset.ask);
         if (!await confirmDialog({ title: `Ask ${nameOf(i.owner_id)} to confirm?`, body: `<p><strong>${esc(i.label)}</strong>. They get a request and an email, and set the value in the model.</p>`, confirmLabel: "Ask" })) return;
         const req = await store.omAskInput(i.id, i.owner_id, null);
-        store.notify("action_item", req); toast(`Asked. ${nameOf(i.owner_id)} has been emailed.`); return;
+        toastNotice(await store.notify("action_item", req), `Asked. ${nameOf(i.owner_id)} has been emailed.`, "Asked."); return;
       }
       if (b.dataset.askFinding) {
         const f = d.findings.find((x) => x.id === b.dataset.askFinding);
         if (!await confirmDialog({ title: `Ask ${nameOf(f.owner_id)} to resolve this?`, body: `<p><strong>${esc(f.ref || "")} ${esc(f.observation)}</strong>. They get a request and an email.</p>`, confirmLabel: "Ask" })) return;
         const req = await store.omAskFinding(f.id, f.owner_id, null);
         if (f.status === "open") f.status = "in_progress";
-        store.notify("action_item", req); toast(`Asked. ${nameOf(f.owner_id)} has been emailed.`); render(); return;
+        toastNotice(await store.notify("action_item", req), `Asked. ${nameOf(f.owner_id)} has been emailed.`, "Asked."); render(); return;
       }
       if (b.hasAttribute("data-send-project")) {
         const g = result.global;

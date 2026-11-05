@@ -1,5 +1,8 @@
 // Transactional email via Resend (https://resend.com). If RESEND_API_KEY is
 // not configured the message is logged and skipped, so the portal still works.
+// sendEmail resolves true only when Resend accepted the message, so callers can tell the
+// person honestly whether an email went out (a refused send, e.g. an unverified domain,
+// is false, not silent).
 import { button, emailShell } from "./brand-email.js";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
@@ -16,15 +19,21 @@ export function layout(heading: string, bodyHtml: string, cta?: { label: string;
   return emailShell({ heading: escapeHtml(heading), body, preheader });
 }
 
-export async function sendEmail(to: string, subject: string, html: string): Promise<void> {
+export async function sendEmail(to: string, subject: string, html: string): Promise<boolean> {
   if (!RESEND_API_KEY) {
     console.log(`[email skipped: RESEND_API_KEY not set] to=${to} subject=${subject}`);
-    return;
+    return false;
   }
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM, to: [to], subject, html }),
-  });
-  if (!res.ok) console.error(`Resend error ${res.status}: ${await res.text()}`);
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${RESEND_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: FROM, to: [to], subject, html }),
+    });
+    if (res.ok) return true;
+    console.error(`Resend error ${res.status}: ${await res.text()}`);
+  } catch (err) {
+    console.error(`Resend unreachable: ${(err as Error).message}`);
+  }
+  return false;
 }

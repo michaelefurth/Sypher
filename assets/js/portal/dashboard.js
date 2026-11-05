@@ -19,7 +19,7 @@
 // routes, so the back button and email links work.
 import { store, FILE_ACCEPT, checkFile } from "./store.js";
 import { ADMIN_CONTACT } from "./config.js";
-import { esc, paragraphs, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, download, confirmDialog, promptDialog } from "./ui.js";
+import { esc, paragraphs, fmtDate, relTime, greeting, initials, renderChrome, requireSession, statusPill, progressBar, toast, toastNotice, download, confirmDialog, promptDialog } from "./ui.js";
 import { mountSov, sovTotals, sheetPill, money, SHEET_STATUS } from "./sov.js";
 import { mountBell } from "./bell.js";
 import { mountModel, modelSummary } from "./model.js";
@@ -1162,7 +1162,8 @@ main.addEventListener("click", async (e) => {
         await store.reviewRequest(a.id, false, note);
         toast("Sent back with your note.");
       }
-      store.notify("request_update", a.id);
+      const n = await store.notify("request_update", a.id);
+      if (n?.reason === "email failed") toastNotice(n, "", t.dataset.reqReview === "accept" ? "Accepted." : "Sent back.");
       await reload();
       return;
     }
@@ -1262,6 +1263,7 @@ main.addEventListener("submit", async (e) => {
       const text = form.body.value.trim();
       if (!text) return;
       const row = await store.postMessage(eng.id, text, thread);
+      if (row.notice?.reason === "email failed") toastNotice(row.notice, "", "Sent.");
       (thread === "team" ? room.teamMessages : room.messages).push(row);
       if (thread === "team") room.teamLastRead = new Date().toISOString();
       form.body.value = "";
@@ -1283,22 +1285,22 @@ main.addEventListener("submit", async (e) => {
       }
       if (btn) btn.textContent = "Sending…";
       await store.submitRequest(a.id, note);
-      store.notify("request_update", a.id);
-      toast(`Sent. ${fromName(a)} has been told.`);
+      const n = await store.notify("request_update", a.id);
+      toastNotice(n, `Sent. ${fromName(a)} has been told.`, "Sent.");
       await reload();
     } else if (form.id === "ask-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const kind = v("kind");
       const row = await store.addActionItem({ engagement_id: eng.id, kind, title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: room.actions.length + 1 });
       const self = !row.assignee_id && !isMember();
-      if (!self) store.notify("action_item", row.id);
-      toast(self ? "Added to your list." : `Sent to ${askedName(row)}. They’ve been emailed.`);
+      const n = self ? null : await store.notify("action_item", row.id);
+      toastNotice(n, self ? "Added to your list." : `Sent to ${askedName(row)}. They’ve been emailed.`, `Sent to ${askedName(row)}.`);
       await reload();
     } else if (form.id === "task-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const row = await store.addActionItem({ engagement_id: eng.id, title: v("title"), detail: v("detail") || null, due_date: v("due_date") || null, assignee_id: v("assignee_id") || null, position: room.actions.length + 1 });
-      if (row.assignee_id) store.notify("action_item", row.id);
-      toast(row.assignee_id ? `Task added. ${personName(row.assignee_id)} has been emailed.` : "Added to your list.");
+      const n = row.assignee_id ? await store.notify("action_item", row.id) : null;
+      toastNotice(n, row.assignee_id ? `Task added. ${personName(row.assignee_id)} has been emailed.` : "Added to your list.", "Task added.");
       await reload();
     } else if (form.id === "member-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
@@ -1308,7 +1310,8 @@ main.addEventListener("submit", async (e) => {
         engagement_id: eng.id, email: v("email"), full_name: v("full_name"), organization: v("organization") || null, role_label: v("role_label"),
         can_message: form.can_message.checked, can_files: form.can_files.checked, expires_at: days ? daysFromNow(Number(days)) : null,
       });
-      toast(r.invited ? `Invitation sent to ${v("email")}.` : `${v("full_name")} already had a portal account and has been added.`);
+      if (r.emailed === false) toastNotice({ reason: "email failed" }, "", `${v("full_name")} has been added.`);
+      else toast(r.invited ? `Invitation sent to ${v("email")}.` : `${v("full_name")} already had a portal account and has been added.`);
       await reload();
       location.hash = "team";
     } else if (form.id === "team-file-form") {
@@ -1316,8 +1319,8 @@ main.addEventListener("submit", async (e) => {
       if (!file) throw new Error("Choose a file first.");
       checkFile(file);
       if (btn) btn.textContent = "Uploading…";
-      await store.uploadTeamFile(eng.id, file, form.note.value.trim());
-      toast("Shared with the team.");
+      const row = await store.uploadTeamFile(eng.id, file, form.note.value.trim());
+      toastNotice(row.notice, "Shared with the team.", "Shared with the team.");
       await reload();
     }
   } catch (err) { toast(err.message, true); }

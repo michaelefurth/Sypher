@@ -54,6 +54,16 @@ export function toast(message, isError = false) {
   toastTimer = setTimeout(() => el.classList.remove("is-on"), 3600);
 }
 
+/**
+ * After an action that emails someone: the usual words, or a plain warning when the email did
+ * not go out (the notification function answers reason "email failed"). Returns whether it went.
+ */
+export function toastNotice(notice, sentText, savedText) {
+  const failed = notice?.reason === "email failed";
+  toast(failed ? `${savedText} The email couldn't be sent, so let them know another way; it's waiting for them in the portal.` : sentText, failed);
+  if (failed) { clearTimeout(toastTimer); toastTimer = setTimeout(() => $(".toast")?.classList.remove("is-on"), 8000); }
+  return !failed;
+}
 /** Promise-based confirm built on <dialog>. Resolves true when confirmed. */
 export function confirmDialog({ title, body, confirmLabel = "Confirm", cancelLabel = "Cancel" }) {
   return new Promise((resolve) => {

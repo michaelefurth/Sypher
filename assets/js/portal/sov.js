@@ -278,6 +278,11 @@ export async function mountSov(el, { sheetId, role, me, nameOf = () => "Someone"
     if (!canEdit) return field === "note" ? `<span class="sov-note">${esc(l.note || "")}</span>` : `<span>${esc(fmtField(field, value))}</span>`;
     const num = NUM_FIELDS.has(field);
     const derived = field === "amount" && l.quantity != null && l.unit_cost != null;
+    // A long description wraps and grows instead of running off the end of a one-line box.
+    if (field === "description" || field === "note") {
+      const ph = field === "note" ? ` placeholder="${["excluded", "tbd"].includes(l.line_status) ? "Why? (needed)" : "Note"}"` : "";
+      return `<textarea class="sov-in sov-in--desc" rows="1" data-line="${esc(id)}" data-field="${field}"${ph} aria-label="${esc(label)}" autocomplete="off" spellcheck="true">${esc(l[field] || "")}</textarea>`;
+    }
     return `<input class="sov-in${num ? " sov-in--num" : ""}" data-line="${esc(id)}" data-field="${field}" value="${esc(fmtField(field, value))}"
       ${num ? 'inputmode="decimal"' : ""}${field === "unit" ? ' list="sov-units"' : ""}${derived ? ' readonly title="Quantity × unit cost. Clear either to enter a lump sum."' : ""}
       ${field === "note" ? `placeholder="${["excluded", "tbd"].includes(l.line_status) ? "Why? (needed)" : "Note"}"` : ""} aria-label="${esc(label)}" autocomplete="off" spellcheck="${field === "note" || field === "description"}">`;
@@ -386,6 +391,8 @@ export async function mountSov(el, { sheetId, role, me, nameOf = () => "Someone"
     </div>`;
   }
 
+  /** A textarea as tall as its text. */
+  const grow = (t) => { if (!t.offsetParent) return; t.style.height = "auto"; t.style.height = `${t.scrollHeight + 2}px`; };
   function render() {
     const focus = document.activeElement && el.contains(document.activeElement) ? { line: document.activeElement.dataset.line, field: document.activeElement.dataset.field, sheet: document.activeElement.dataset.sheet, start: document.activeElement.selectionStart, end: document.activeElement.selectionEnd } : null;
     const t = sovTotals(sheet, lines, budget);
@@ -428,6 +435,7 @@ export async function mountSov(el, { sheetId, role, me, nameOf = () => "Someone"
       const node = sel && el.querySelector(sel);
       if (node) { node.focus({ preventScroll: true }); try { node.setSelectionRange(focus.start, focus.end); } catch (_) { /* select */ } }
     }
+    el.querySelectorAll("textarea.sov-in").forEach(grow);
   }
 
   /** Repaint one line's derived bits (amount, variance, answered state) without touching the cell being typed in. */
@@ -597,6 +605,7 @@ export async function mountSov(el, { sheetId, role, me, nameOf = () => "Someone"
   /* ---------------- events */
   const on = (type, fn) => el.addEventListener(type, fn);
   on("input", (e) => {
+    if (e.target.matches("textarea.sov-in")) grow(e.target);
     if (e.target.matches(".sov-in")) applyInput(e.target);
     else if (e.target.matches(".sov-sheet-in")) applySheetInput(e.target);
   });

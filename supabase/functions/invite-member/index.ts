@@ -80,9 +80,11 @@ Deno.serve(async (req) => {
   const company = client.company ? ` at ${escapeHtml(client.company)}` : "";
   const until = expiresAt ? new Date(expiresAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }) : "the end of the engagement";
 
+  // A new person gets Supabase's invitation (which fails loudly above); someone with an account gets this note.
+  let emailed = isNew;
   if (!isNew) {
     const hello = fullName ? `Dear ${escapeHtml(fullName.split(" ")[0])},` : "Hello,";
-    await sendEmail(email, `${inviter} added you to ${eng.title}`,
+    emailed = await sendEmail(email, `${inviter} added you to ${eng.title}`,
       layout("You've been added to an engagement", `<p>${hello}</p><p>${escapeHtml(inviter)}${company} has added you to <em>${escapeHtml(eng.title)}</em>, an engagement with Sypher Solutions. You can share files, message the team and see tasks assigned to you. Access runs until ${escapeHtml(until)}.</p>`,
         { label: "Open the portal", url: `${SITE_URL}/portal/` }));
   }
@@ -93,5 +95,5 @@ Deno.serve(async (req) => {
         { label: "Review the team", url: `${SITE_URL}/portal/admin.html#engagement=${eng.id}` }));
   }
 
-  return json({ member_id: member.id, invited: isNew });
+  return json({ member_id: member.id, invited: isNew, emailed });
 });
