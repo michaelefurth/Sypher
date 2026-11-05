@@ -691,6 +691,24 @@ await as(CPA, async () => { ok("an accountant on the team never sees billing", (
 await as(CT, async () => { ok("the contractor never sees billing", (await rows(`select * from public.invoices`)).length === 0 && (await rows(`select * from public.billing_profiles`)).length === 0); });
 await asAnon(async () => { ok("signed-out visitors can't reach billing", await fails(`select * from public.invoices`) || (await rows(`select * from public.invoices`)).length === 0); });
 
+// --- Review inbox for documents an assistant files (20261111000000_review_inbox) ---
+ok("the inbox bucket exists, private, with the portal's file types", (await rows(`select 1 from storage.buckets where id = 'inbox' and not public and allowed_mime_types = (select allowed_mime_types from storage.buckets where id = 'portal')`)).length === 1);
+await as(ADMIN, async () => {
+  await q(`insert into public.inbox_documents (engagement_id, title, path, name) values ('${ENG_A}', 'Forensic review', '${ENG_A}/11111111-1111-1111-1111-111111111111-review.pdf', 'review.pdf')`);
+  await q(`insert into storage.objects (bucket_id, name) values ('inbox', '${ENG_A}/11111111-1111-1111-1111-111111111111-review.pdf')`);
+  ok("Michael sees what's waiting and its file", (await rows(`select * from public.inbox_documents`)).length === 1 && (await rows(`select * from storage.objects where bucket_id = 'inbox'`)).length === 1);
+  ok("a waiting document belongs to an engagement", await fails(`insert into public.inbox_documents (title, path, name) values ('x', 'p', 'n')`));
+});
+await as(A, async () => {
+  ok("the client can't see documents waiting for review, even in their own engagement", (await rows(`select * from public.inbox_documents`)).length === 0);
+  ok("the client can't open or list waiting files in storage", (await rows(`select * from storage.objects where bucket_id = 'inbox'`)).length === 0);
+  ok("the client can't put files in the inbox", await fails(`insert into storage.objects (bucket_id, name) values ('inbox', '${ENG_A}/22222222-2222-2222-2222-222222222222-x.pdf')`));
+  ok("the client can't file or clear waiting documents", await fails(`insert into public.inbox_documents (engagement_id, title, path, name) values ('${ENG_A}', 'x', 'p2', 'n')`) && (await rows(`delete from public.inbox_documents returning id`)).length === 0);
+});
+await as(CPA, async () => { ok("an accountant on the team can't see waiting documents or files", (await rows(`select * from public.inbox_documents`)).length === 0 && (await rows(`select * from storage.objects where bucket_id = 'inbox'`)).length === 0); });
+await as(ADMIN, async () => { ok("an admin session without a verified code sees nothing waiting", (await rows(`select * from public.inbox_documents`)).length === 0 && (await rows(`select * from storage.objects where bucket_id = 'inbox'`)).length === 0); }, "aal1");
+await asAnon(async () => { ok("signed-out visitors can't reach the inbox", await fails(`select * from public.inbox_documents`) || (await rows(`select * from public.inbox_documents`)).length === 0); });
+
 console.log(results.join("\n"));
 const failed = results.some((r) => r.startsWith("FAIL"));
 console.log(failed ? "\nSOME TESTS FAILED" : `\nALL ${results.length} TESTS PASSED`);

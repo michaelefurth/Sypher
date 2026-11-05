@@ -537,6 +537,32 @@ export const store = {
       throw err;
     }
   },
+  // ---- review inbox: documents an assistant filed (agent-upload), waiting for Michael ----
+  async inboxDocuments(engagementId) {
+    const client = await sb();
+    return check(await client.from("inbox_documents").select("*").eq("engagement_id", engagementId).order("created_at"));
+  },
+  async inboxUrl(path) {
+    const client = await sb();
+    const { data, error } = await client.storage.from("inbox").createSignedUrl(path, 300);
+    if (error) throw error;
+    return data.signedUrl;
+  },
+  /** Share a waiting document: it becomes an ordinary document in the client's room, then leaves the inbox. */
+  async shareInboxDocument(item, { shared_with_team = false } = {}) {
+    const client = await sb();
+    const { data: blob, error } = await client.storage.from("inbox").download(item.path);
+    if (error) throw error;
+    const file = new File([blob], item.name, { type: item.content_type || blob.type });
+    const row = await this.uploadDeliverable(item.engagement_id, { title: item.title, note: item.note || null, milestone_id: item.milestone_id || null, shared_with_team }, file);
+    await this.discardInboxDocument(item);
+    return row;
+  },
+  async discardInboxDocument(item) {
+    const client = await sb();
+    check(await client.from("inbox_documents").delete().eq("id", item.id));
+    await client.storage.from("inbox").remove([item.path]);
+  },
   async updateDeliverable(id, fields) {
     const client = await sb();
     check(await client.from("deliverables").update(fields).eq("id", id));
@@ -618,6 +644,8 @@ export const store = {
     const client = await sb();
     const paths = await this.engagementObjects(engagementId);
     for (let i = 0; i < paths.length; i += 100) check(await client.storage.from("portal").remove(paths.slice(i, i + 100)));
+    const waiting = (await this.inboxDocuments(engagementId).catch(() => [])).map((d) => d.path);
+    if (waiting.length) check(await client.storage.from("inbox").remove(waiting));
     check(await client.from("engagements").delete().eq("id", engagementId));
     return paths.length;
   },

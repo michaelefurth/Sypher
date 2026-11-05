@@ -62,8 +62,9 @@ Nothing written by the AI reaches a client until you publish it.
 | `supabase/functions/room-notify` | Signed-in users: emails the right people about a new message, document, request, answer, review, pricing submission or team file |
 | `supabase/functions/invite-member` | The client or admin: adds an attorney, CPA or other adviser to an engagement's team |
 | `supabase/functions/billing` | Admin: creates and sends Stripe invoices with sales tax, voids or refreshes them. The client or admin: saves the billing address |
+| `supabase/functions/agent-upload` | An assistant with its own key: files documents into an admin-only review inbox, nothing else |
 | `supabase/functions/stripe-webhook` | Public, signature-checked: keeps invoices current when Stripe reports a payment, failure, refund or credit |
-| `supabase/tests/rls-test.mjs` | 287 automated security tests for the access rules |
+| `supabase/tests/rls-test.mjs` | 297 automated security tests for the access rules |
 | `private/` | Git-ignored. Client question sets live here, never in the repo |
 
 ---
@@ -400,6 +401,32 @@ Invoices for an engagement (a deposit, a milestone, a retainer or a one-off fee)
 
 Until `STRIPE_SECRET_KEY` is set, the Billing tabs still show addresses, and creating an invoice says Stripe isn't connected yet.
 
+## Documents from an assistant (review inbox)
+
+An assistant (for example, Claude working in a cloud session) can file the documents it prepares straight into the portal, but only for your review. Nothing it files reaches a client or team member until you share it.
+
+**What it can do.** The `agent-upload` function accepts two requests, each carrying the assistant's key in an `X-Agent-Key` header:
+- `context`: lists the engagements, their milestones, and the titles of documents already shared or waiting, so it can file in the right place.
+- `upload`: stores a file (PDF, Office, CSV, text or image, up to 20 MB) with a title, a note, a suggested milestone and a suggestion whether the team should see it.
+
+It can't open or download any document, change or delete anything, or reach anyone but you.
+
+**Where documents wait.** Files go into a separate private storage bucket, `inbox`, and the `inbox_documents` table. Only an admin with two-step sign-in can open either. Clients' and team members' storage rules all name the `portal` bucket, so they can't see the inbox even inside their own engagement. You get one email per batch ("Waiting for your review").
+
+**Reviewing.** In admin, the engagement's **Documents** tab shows **Waiting for your review** at the top, with a count on the tab. For each document:
+- **Open** reads it.
+- **Share** moves it into the client's Documents like any upload, optionally with "Team can see", and emails the client unless you untick it.
+- **Discard** deletes it.
+
+Deleting an engagement also deletes anything still waiting.
+
+**Switching it on.**
+1. Make a long random key, at least 32 characters. A password manager's generator works, or run `crypto.randomUUID() + crypto.randomUUID()` in a browser console.
+2. Supabase → Edge Functions → Secrets: add `AGENT_UPLOAD_KEY` with that value.
+3. In the assistant's environment, save the same value as a credential for the host `<project-ref>.supabase.co`, sent in the `X-Agent-Key` header. In a Claude cloud session, the assistant asks for it with a secure form. The network proxy adds it to the assistant's requests, so the assistant never sees the key.
+
+To switch it off, delete the `AGENT_UPLOAD_KEY` secret: the function then refuses every request. To change the key, update both places.
+
 ## Security model
 
 - **Prospects can't read anything.** Diagnostics are written by the `submit-inquiry` function with the service role; the table is admin-only.
@@ -415,7 +442,7 @@ Until `STRIPE_SECRET_KEY` is set, the Billing tabs still show addresses, and cre
 - **The website sends strict security headers** (`.htaccess`): HTTPS only (HSTS), and a Content Security Policy that lets pages run only the site's own scripts and talk only to the Supabase project. If you add an inline script or an outside service (analytics, a map, a booking widget), the policy must allow it: run `node scripts/check-csp.mjs` and update `.htaccess`.
 - **Closing out.** On an engagement page in admin, **Mark complete** ends outside team access and leaves the client read access. **Export everything** downloads all of the engagement's records as JSON (files are listed by path; download any you need first). **Delete engagement and files** asks you to type the title, then removes the stored files and every record.
 - Clients can't change their own role. Sign-in is by one-time email link, for invited addresses only.
-- The service-role key and the Anthropic, Resend and Stripe keys live only in Supabase function secrets, never in the browser. The portal never handles card or bank details: clients pay on Stripe's own page.
+- The service-role key and the Anthropic, Resend, Stripe and agent-upload keys live only in Supabase function secrets, never in the browser. The portal never handles card or bank details: clients pay on Stripe's own page.
 - Re-run the access tests after any schema change (GitHub runs them, the script checks, the policy check and the build check on every push):
   ```sh
   cd supabase/tests && npm i @electric-sql/pglite && node rls-test.mjs

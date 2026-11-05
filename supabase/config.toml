@@ -32,3 +32,8 @@ verify_jwt = true
 # Called by Stripe, not the portal: the Stripe-Signature header is verified instead.
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Called by an assistant with its own key (X-Agent-Key), not a portal sign-in. It can only
+# file documents into the admin-only review inbox. Off unless AGENT_UPLOAD_KEY is set.
+[functions.agent-upload]
+verify_jwt = false
