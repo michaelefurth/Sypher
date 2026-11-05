@@ -437,7 +437,7 @@ export const store = {
   async postMessage(engagementId, body, thread = "private") {
     const client = await sb();
     const row = check(await client.from("messages").insert({ engagement_id: engagementId, body, thread }).select().single());
-    this.notify("message", row.id);
+    row.notice = await this.notify("message", row.id);
     return row;
   },
   async markRead(engagementId) {
@@ -494,7 +494,7 @@ export const store = {
     check(await client.storage.from("portal").upload(path, typed(file, contentType), { upsert: false, contentType }));
     try {
       const row = check(await client.from("team_files").insert({ engagement_id: engagementId, path, name: file.name, size: file.size, note: note || null }).select().single());
-      this.notify("team_file", row.id);
+      row.notice = await this.notify("team_file", row.id);
       return row;
     } catch (err) {
       await client.storage.from("portal").remove([path]);
@@ -926,7 +926,8 @@ export const store = {
 
   /** Email the other side about something new. Best effort: never blocks the action itself. */
   async notify(kind, id) {
-    try { await invoke("room-notify", { kind, id }); } catch (err) { console.warn("Notification not sent:", err.message); }
+    // Resolves to the function's answer ({ sent, reason }); a failed call counts as an email not sent.
+    try { return await invoke("room-notify", { kind, id }); } catch (err) { console.warn("Notification not sent:", err.message); return { sent: false, reason: "email failed", error: err.message }; }
   },
 };
 

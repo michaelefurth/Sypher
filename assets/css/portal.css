@@ -666,7 +666,7 @@ a.wait__title { color: var(--teal); }
 .sov-filter { display: inline-flex; align-items: center; gap: 0.6rem; font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--slate); }
 .sov-tools__hint { flex: 1; font-size: 0.8rem; }
 .sov-wrap { overflow-x: auto; border-top: 1px solid var(--rule); position: relative; }
-.sov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9rem; min-width: 980px; }
+.sov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.9rem; min-width: 1080px; }
 .sov-table--owner { min-width: 1160px; }
 .sov-table thead th { position: sticky; top: 0; z-index: 2; background: var(--navy); color: var(--on-dark); font-weight: 450; font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; text-align: left; padding: 0.7rem 0.6rem; white-space: nowrap; }
 .sov-table td { padding: 0.25rem 0.35rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
@@ -676,7 +676,7 @@ td.sov-c-code { padding-top: 0.75rem !important; padding-left: 0.6rem !important
 .sov-c-num { width: 7.5rem; text-align: right !important; }
 .sov-c-unit { width: 4.6rem; }
 .sov-c-st { width: 7.4rem; }
-.sov-c-note { min-width: 12rem; }
+.sov-c-note { min-width: 11rem; }
 .sov-c-act { width: 4rem; white-space: nowrap; text-align: right; }
 th.sov-c-num { text-align: right; }
 .sov-desc { display: grid; gap: 0.2rem; padding: 0.45rem 0.25rem; }
@@ -1039,3 +1039,31 @@ span.pm-st { display: inline-block; margin-top: 0.25rem; }
 .om-table--comp thead th { white-space: normal; vertical-align: bottom; }
 .om-finding__body > label { align-content: start; }
 .om-comp__class select.pm-in { max-width: 14rem; text-overflow: ellipsis; }
+
+/* Pricing grid: a description that wraps; a code column wide enough for "01 50 00" */
+.sov-in--desc { resize: none; overflow: hidden; line-height: 1.35; min-height: 2.3rem; display: block; }
+.sov-c-code { width: 5.8rem; min-width: 5.8rem; }
+.sov-versions > summary { list-style: none; cursor: pointer; }
+.sov-versions > summary::-webkit-details-marker { display: none; }
+.sov-versions > summary::before { content: "+ "; }
+.sov-versions[open] > summary::before { content: "\2212  "; }
+/* Project model budget: number fields that fit the table at iPad landscape width */
+[data-part="budget"] .pm-row td:first-child { min-width: 15.4rem; }
+[data-part="budget"] .pm-in--num { min-width: 5.3rem; }
+/* The room's "ask for something" form: one column when the card is narrow */
+.req-ask .p-form--2 { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
+/* Tab strips that fit an iPad held upright */
+@media (max-width: 1180px) {
+  .room-tabs__inner { gap: 1.05rem; }
+  .room-tabs__link { letter-spacing: 0.14em; }
+  .om-bar__links { gap: 0.65rem; }
+  .om-bar__links button { letter-spacing: 0.1em; }
+}
+
+/* The room's tab strip fits its 1180px shell at any width */
+.room-tabs__inner { gap: clamp(1.05rem, 2.2vw, 2rem); }
+/* The pricing grid's small columns keep their width; the grid scrolls sideways instead of squeezing them */
+.sov-c-num { min-width: 5.8rem; }
+.sov-c-unit { min-width: 4.2rem; }
+.sov-c-st { min-width: 7.4rem; }
+.pm-table td.pm-c-act { min-width: 5.4rem; }

@@ -14,7 +14,7 @@
 // until it is opened; a bar under the figures jumps between them. What is open is remembered
 // in the browser.
 import { store } from "./store.js";
-import { esc, fmtDate, relTime, toast, confirmDialog, promptDialog, download } from "./ui.js";
+import { esc, fmtDate, relTime, toast, toastNotice, confirmDialog, promptDialog, download } from "./ui.js";
 import { money, parseNum } from "./sov.js";
 import { calculateOwner, CATEGORIES, SEG_PRESETS, FILING, CURRENT_YEAR, bonusRate, num } from "./owner-calc.js";
 import { modelSummary } from "./model.js";
@@ -202,7 +202,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           ${calcRow("corr", "Corrections to the return (change in taxable income)", (p) => p.corrections || null)}
           ${calcRow("corrected", "Net profit as it should have been filed", (p) => (p.corrections ? p.correctedTaxNet : null))}
           ${rowOf("cash", "Cash at period end")}${rowOf("total_assets", "Total assets")}${rowOf("total_liabilities", "Total liabilities")}
-          ${admin ? `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td>${field("om_periods", row.id, "source", row.source, { kind: "text", label: "Source" })}${field("om_periods", row.id, "confidence", row.confidence, { options: CONF, label: "Confidence" })}</td>`; }).join("")}</tr>` : `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td class="pm-sub">${esc(row.source || "")}${row.confidence !== "firm" ? ` (${row.confidence})` : ""}</td>`; }).join("")}</tr>`}
+          ${admin ? `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td>${field("om_periods", row.id, "source", row.source, { kind: "area", label: "Source" })}${field("om_periods", row.id, "confidence", row.confidence, { options: CONF, label: "Confidence" })}</td>`; }).join("")}</tr>` : `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td class="pm-sub">${esc(row.source || "")}${row.confidence !== "firm" ? ` (${row.confidence})` : ""}</td>`; }).join("")}</tr>`}
         </tbody></table></div>` : `<p class="p-muted">No periods yet.${admin ? " Add one for each year of books." : ""}</p>`}
       </div>`;
     }).join("");
@@ -251,7 +251,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           <label class="om-inline">Use ${field("om_properties", p.id, "use", p.use, { options: USES, label: "Use" })}</label>
           <label class="om-inline">Rent from ${field("om_properties", p.id, "rent_source", p.rent_source, { options: RENT, label: "Rent source" })}</label>
           <label class="om-inline">Used by ${field("om_properties", p.id, "used_by_entity_id", p.used_by_entity_id || "", { options: entOpts, label: "Used by" })}</label>
-          <label class="om-inline">Tenant ${field("om_properties", p.id, "tenant", p.tenant, { kind: "text", label: "Tenant" })}</label>
+          <label class="om-inline">Tenant ${field("om_properties", p.id, "tenant", p.tenant, { kind: "area", label: "Tenant" })}</label>
           <label class="om-inline">Acquired ${field("om_properties", p.id, "acquired", p.acquired, { kind: "date", label: "Acquired" })}</label>
           <label class="om-inline">Placed in service ${field("om_properties", p.id, "placed_in_service", p.placed_in_service, { kind: "date", label: "Placed in service" })}</label>
           ${PROP_NUM.map(([f, l]) => `<label class="om-inline">${l} ${field("om_properties", p.id, f, p[f], { label: l })}</label>`).join("")}
@@ -260,7 +260,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           ${field("om_properties", p.id, "se_business", p.se_business, { kind: "bool", label: "Used in the owner's own trade (deduction against business income)" })}
           ${field("om_properties", p.id, "passive", p.passive, { kind: "bool", label: "Passive rental (losses limited)" })}
           ${field("om_properties", p.id, "bonus_elected_out", p.bonus_elected_out, { kind: "bool", label: "Elected out of bonus depreciation" })}
-          <label class="om-inline om-inline--wide">Note ${field("om_properties", p.id, "note", p.note, { kind: "text", label: "Note" })}</label>
+          <label class="om-inline om-inline--wide">Note ${field("om_properties", p.id, "note", p.note, { kind: "area", label: "Note" })}</label>
         </div>` : `<dl class="om-prop__facts">
           <div><dt>Use</dt><dd>${esc(USES.find(([k]) => k === p.use)?.[1] || p.use)}</dd></div><div><dt>Rent</dt><dd>${esc(RENT.find(([k]) => k === p.rent_source)?.[1])}${p.tenant ? ` · ${esc(p.tenant)}` : ""}</dd></div>
           <div><dt>Acquired</dt><dd>${p.acquired ? esc(fmtDate(p.acquired, { month: "short", year: "numeric" })) : "—"}</dd></div><div><dt>Cost basis</dt><dd>${p.cost_basis == null ? "—" : money(Number(p.cost_basis))}</dd></div>
@@ -404,7 +404,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
     const groups = PCAT.filter(([k]) => items.some((i) => i.category === k));
     const money0 = (v) => (v == null ? "—" : money(Number(v)));
     const row = (i) => `<tr class="om-pers is-${esc(i.status)}">
-      <td>${admin ? field("om_personal", i.id, "label", i.label, { kind: "text", label: "Item" }) : `<b>${esc(i.label)}</b>`}${admin ? field("om_personal", i.id, "detail", i.detail, { kind: "area", label: "Detail" }) : i.detail ? `<span class="om-text om-pers__detail">${esc(i.detail)}</span>` : ""}${admin ? field("om_personal", i.id, "note", i.note, { kind: "text", label: "Note" }) : i.note ? `<span class="pm-sub">${esc(i.note)}</span>` : ""}</td>
+      <td>${admin ? field("om_personal", i.id, "label", i.label, { kind: "area", label: "Item" }) : `<b>${esc(i.label)}</b>`}${admin ? field("om_personal", i.id, "detail", i.detail, { kind: "area", label: "Detail" }) : i.detail ? `<span class="om-text om-pers__detail">${esc(i.detail)}</span>` : ""}${admin ? field("om_personal", i.id, "note", i.note, { kind: "area", label: "Note" }) : i.note ? `<span class="pm-sub">${esc(i.note)}</span>` : ""}</td>
       <td class="pm-c-num">${field("om_personal", i.id, "amount", i.amount, { label: "Value" })}</td>
       <td class="pm-c-num">${field("om_personal", i.id, "liability", i.liability, { label: "Owed" })}</td>
       <td>${field("om_personal", i.id, "as_of", i.as_of, { kind: "date", label: "As of" })}</td>
@@ -713,14 +713,14 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
         const i = d.inputs.find((x) => x.id === b.dataset.ask);
         if (!await confirmDialog({ title: `Ask ${nameOf(i.owner_id)} to confirm?`, body: `<p><strong>${esc(i.label)}</strong>. They get a request and an email, and set the value in the model.</p>`, confirmLabel: "Ask" })) return;
         const req = await store.omAskInput(i.id, i.owner_id, null);
-        store.notify("action_item", req); toast(`Asked. ${nameOf(i.owner_id)} has been emailed.`); return;
+        toastNotice(await store.notify("action_item", req), `Asked. ${nameOf(i.owner_id)} has been emailed.`, "Asked."); return;
       }
       if (b.dataset.askFinding) {
         const f = d.findings.find((x) => x.id === b.dataset.askFinding);
         if (!await confirmDialog({ title: `Ask ${nameOf(f.owner_id)} to resolve this?`, body: `<p><strong>${esc(f.ref || "")} ${esc(f.observation)}</strong>. They get a request and an email.</p>`, confirmLabel: "Ask" })) return;
         const req = await store.omAskFinding(f.id, f.owner_id, null);
         if (f.status === "open") f.status = "in_progress";
-        store.notify("action_item", req); toast(`Asked. ${nameOf(f.owner_id)} has been emailed.`); render(); return;
+        toastNotice(await store.notify("action_item", req), `Asked. ${nameOf(f.owner_id)} has been emailed.`, "Asked."); render(); return;
       }
       if (b.hasAttribute("data-send-project")) {
         const g = result.global;

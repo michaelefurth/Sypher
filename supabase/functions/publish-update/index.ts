@@ -40,9 +40,9 @@ Deno.serve(async (req) => {
 
   const client = engagement.profiles as unknown as { email: string; full_name: string | null };
   const greeting = client.full_name ? `Dear ${escapeHtml(client.full_name.split(" ")[0])},` : "Hello,";
-  await sendEmail(client.email, `An update from Sypher Solutions: ${title}`,
+  const emailed = await sendEmail(client.email, `An update from Sypher Solutions: ${title}`,
     layout(title, `<p>${greeting}</p><p>Michael has published a new update to your engagement, <em>${escapeHtml(engagement.title)}</em>. You can read it in your client portal.</p>`,
       { label: "Open your portal", url: `${SITE_URL}/portal/` }));
 
-  return json({ publication_id: publication.id, published_at: publication.published_at });
+  return json({ publication_id: publication.id, published_at: publication.published_at, emailed });
 });

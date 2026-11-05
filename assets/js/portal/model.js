@@ -6,7 +6,7 @@
 // a budget line Michael edits, an assumption the accountant confirms. Changes made by others
 // arrive live; the screen never redraws a field someone is typing in.
 import { store } from "./store.js";
-import { esc, fmtDate, relTime, toast, confirmDialog, promptDialog, download } from "./ui.js";
+import { esc, fmtDate, relTime, toast, toastNotice, confirmDialog, promptDialog, download } from "./ui.js";
 import { money, parseNum } from "./sov.js";
 import { calculate, SCENARIOS, monthLabel } from "./model-calc.js";
 
@@ -436,8 +436,8 @@ export async function mountModel(el, { modelId, role, me, nameOf = () => "Someon
         const i = inputs.find((x) => x.id === b.dataset.ask);
         if (!await confirmDialog({ title: `Ask ${nameOf(i.owner_id)} to confirm?`, body: `<p><strong>${esc(i.label)}</strong>. They get a request and an email, and set the value in the model.</p>`, confirmLabel: "Ask" })) return;
         const req = await store.pmAskInput(i.id, i.owner_id, null);
-        store.notify("action_item", req);
-        toast(`Asked. ${nameOf(i.owner_id)} has been emailed.`);
+        const n = await store.notify("action_item", req);
+        toastNotice(n, `Asked. ${nameOf(i.owner_id)} has been emailed.`, "Asked.");
         return;
       }
       if (b.hasAttribute("data-snapshot")) {
