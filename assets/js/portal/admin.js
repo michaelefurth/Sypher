@@ -23,6 +23,8 @@ const ACTIVITY = {
   message_posted: "Message", deliverable_shared: "Document shared", action_assigned: "Item added for the client",
   action_done: "Task done", decision_recorded: "Decision recorded", milestone_current: "Milestone under way", milestone_done: "Milestone complete",
   team_file_shared: "Team file added", member_invited: "Joined the team", member_revoked: "Team access removed",
+  invoice_sent: "Invoice sent", invoice_paid: "Invoice paid", invoice_payment_failed: "Payment failed", invoice_voided: "Invoice voided",
+  invoice_refunded: "Refund issued", invoice_credited: "Credit note issued", invoice_uncollectible: "Invoice marked uncollectible",
 };
 const activityLabel = (a) => {
   const base = a.kind === "message_posted"
@@ -34,7 +36,13 @@ const activityLabel = (a) => {
 const fmtSize = (n) => (!n ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 const MS_STATUS = [["upcoming", "Upcoming"], ["current", "In progress"], ["done", "Done"]];
 const KIND = { task: "To-do", document: "Document", answer: "Question", approval: "Approval", pricing: "Pricing" };
-const ENG_TABS = [["today", "Today"], ["models", "Models"], ["documents", "Documents"], ["plan", "Plan"], ["people", "People"], ["settings", "Settings"]];
+const ENG_TABS = [["today", "Today"], ["models", "Models"], ["documents", "Documents"], ["billing", "Billing"], ["plan", "Plan"], ["people", "People"], ["settings", "Settings"]];
+/** Invoice amounts are in cents; shown to the cent. */
+const usd = (cents) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format((cents ?? 0) / 100);
+const INV_KIND = { deposit: "Deposit", milestone: "Milestone", retainer: "Retainer", one_off: "Fee" };
+const INV_STATUS = { draft: ["Draft", ""], open: ["Open", "pill--gold"], paid: ["Paid", "pill--navy"], void: ["Void", ""], uncollectible: ["Uncollectible", "pill--red"] };
+/** Stripe tax codes offered on a line: consulting by default, accounting for bookkeeping and forensic work. */
+const TAX_CODES = [["txcd_20060048", "Consulting"], ["txcd_20060001", "Accounting"], ["txcd_20030000", "General services"]];
 /** The engagement the page is on (from #engagement=<id>/<tab>), and its tab. */
 const engagementId = () => (location.hash.slice(1).match(/^engagement=([^/&]+)/) || [])[1] || null;
 const engTab = () => { const t = location.hash.slice(1).split("/")[1]; return ENG_TABS.some(([k]) => k === t) ? t : "today"; };
@@ -145,6 +153,7 @@ async function viewEngagement(id, tab = "today") {
   const models = await store.pmModels(id).catch(() => []);
   const summaries = await Promise.all(models.map((m) => modelSummary(m.id).catch(() => null)));
   const owners = await store.omModels(id).catch(() => []);
+  const [invoices, billing] = await Promise.all([store.invoices(id).catch(() => []), tab === "billing" ? store.billingProfile(eng.client_id).catch(() => null) : null]);
   const ownerSums = await Promise.all(owners.map((m) => ownerSummary(m.id).catch(() => null)));
   const budget = budgetRows.length ? new Map(budgetRows.map((b) => [b.line_id, b])) : null;
   window.__team = { roster, teamFiles };
@@ -397,16 +406,65 @@ async function viewEngagement(id, tab = "today") {
       <p style="margin-top:.75rem"><a class="p-linkbtn" href="#engagement=${esc(id)}/plan">${milestones.length ? "Manage the plan" : "Add milestones"}</a></p>
     </section>`}`;
 
+  const invLine = (i) => `<div class="inv-line">
+      <div class="p-field"><label for="il-d${i}">Line ${i + 1}${i ? " (optional)" : ""}</label><input class="p-input" id="il-d${i}" name="line_desc_${i}" maxlength="500"${i ? "" : " required"} placeholder="${i ? "" : "e.g. Phase 1 deposit"}"></div>
+      <div class="p-field"><label for="il-a${i}">Amount ($)</label><input class="p-input" id="il-a${i}" name="line_amt_${i}" inputmode="decimal" pattern="[0-9,]*(\\.[0-9]{1,2})?"${i ? "" : " required"}></div>
+      <div class="p-field"><label for="il-t${i}">Tax category</label><select class="p-select" id="il-t${i}" name="line_tax_${i}">${TAX_CODES.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div></div>`;
+  const invRow = (inv) => {
+    const [sl, sc] = INV_STATUS[inv.status] || [inv.status, ""];
+    const late = inv.status === "open" && inv.due_date && inv.due_date < new Date().toISOString().slice(0, 10);
+    return `<li class="inv${late ? " is-late" : ""}">
+      <div class="inv__body"><p class="inv__title">${esc(inv.description || "Invoice")}${inv.number ? ` <span class="p-muted">${esc(inv.number)}</span>` : ""}</p>
+        <p class="inv__meta">${esc(INV_KIND[inv.kind] || inv.kind)} · ${usd(inv.total)}${inv.tax ? ` incl. ${usd(inv.tax)} tax` : inv.status !== "draft" ? " · no tax" : ""}
+          ${inv.status === "paid" ? ` · paid ${esc(fmtDate(inv.paid_at, { month: "short", day: "numeric", year: "numeric" }))}` : inv.due_date ? ` · <span class="${late ? "is-late" : ""}">${late ? "overdue since" : "due"} ${esc(fmtDate(inv.due_date, { month: "short", day: "numeric", year: "numeric" }))}</span>` : ""}
+          ${inv.status === "open" && inv.amount_paid ? ` · ${usd(inv.amount_paid)} paid so far` : ""}${inv.refunded ? ` · ${usd(inv.refunded)} refunded` : ""}${inv.credited ? ` · ${usd(inv.credited)} credited` : ""}</p></div>
+      <span class="pill pill--dot ${late ? "pill--red" : sc}">${esc(late ? "Overdue" : sl)}</span>
+      ${inv.last_payment_error && inv.status === "open" ? `<p class="inv__err">${esc(inv.last_payment_error)}</p>` : ""}
+      <div class="btn-row inv__acts">${inv.hosted_invoice_url ? `<a class="p-linkbtn" href="${esc(inv.hosted_invoice_url)}" target="_blank" rel="noopener">Payment page</a>` : ""}${inv.invoice_pdf ? `<a class="p-linkbtn" href="${esc(inv.invoice_pdf)}" target="_blank" rel="noopener">PDF</a>` : ""}
+        <button class="p-linkbtn" data-inv-sync="${esc(inv.id)}">Refresh from Stripe</button>${inv.status === "open" ? `<button class="p-linkbtn" data-inv-void="${esc(inv.id)}">Void</button>` : ""}</div></li>`;
+  };
+  const b = billing || {};
+  const hasAddr = !!(b.line1 && b.city && b.state && b.postal_code);
+  const openInv = invoices.filter((x) => x.status === "open");
+  cards.invoices = () => `<section class="p-card p-card--accent" id="invoices"><div class="p-row"><p class="p-kicker">Invoices</p><span class="p-muted">${openInv.length ? `${usd(openInv.reduce((a, x) => a + (x.amount_remaining ?? x.total ?? 0), 0))} outstanding` : invoices.length ? "All settled" : ""}</span></div>
+      ${invoices.length ? `<ul class="inv-list">${invoices.map(invRow).join("")}</ul>` : `<p class="p-muted">No invoices yet. An invoice is emailed to the client by Stripe with a link to pay by card or bank account, and shows in their Billing tab.</p>`}
+      ${disclosure("New invoice", hasAddr ? `<form class="p-form" id="invoice-form">
+        <input type="hidden" name="request_id" value="${esc(crypto.randomUUID())}">
+        <div class="p-form p-form--2" style="margin:0">
+          <div class="p-field"><label for="inv-kind">Kind</label><select class="p-select" id="inv-kind" name="kind">${Object.entries(INV_KIND).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div>
+          <div class="p-field"><label for="inv-days">Due in (days)</label><input class="p-input" id="inv-days" name="days_until_due" type="number" min="0" max="90" value="15"></div>
+          <div class="p-field p-span"><label for="inv-desc">Memo on the invoice</label><input class="p-input" id="inv-desc" name="description" maxlength="300" value="${esc(eng.title)}"></div>
+        </div>
+        <div class="inv-lines">${[0, 1, 2].map(invLine).join("")}</div>
+        <div class="p-row"><span class="inv-total" id="inv-total">Sales tax is added by Stripe Tax from ${esc(clientName)}'s address.</span><button class="btn btn--navy btn--sm" type="submit">Create and send</button></div>
+      </form>` : `<p class="p-muted">Add ${esc(clientName)}'s billing address first: Stripe Tax needs it to work out sales tax.</p>`, !invoices.length && hasAddr)}
+    </section>`;
+  cards.billingAddress = () => `<section class="p-card" id="billing-address"><p class="p-kicker">Billing address</p>
+      ${hasAddr ? `<p class="bill-addr">${b.billing_name ? `<strong>${esc(b.billing_name)}</strong><br>` : ""}${esc([b.line1, b.line2].filter(Boolean).join(", "))}<br>${esc(`${b.city}, ${b.state} ${b.postal_code}`)}${b.billing_email ? `<br><span class="p-muted">${esc(b.billing_email)}</span>` : ""}</p>
+        <p class="p-muted">${b.stripe_customer_id ? `Stripe customer ${esc(b.stripe_customer_id)}` : "Becomes a Stripe customer with the first invoice."}</p>` : `<p class="p-muted">None yet. ${esc(clientName)} can add it in their Billing tab, or you can here.</p>`}
+      ${disclosure(hasAddr ? "Change it" : "Add it", `<form class="p-form p-form--2" id="billing-admin-form">
+        <div class="p-field p-span"><label for="ba-name">Name or company</label><input class="p-input" id="ba-name" name="billing_name" value="${esc(b.billing_name || client.company || client.full_name || "")}" required></div>
+        <div class="p-field p-span"><label for="ba-email">Invoice email</label><input class="p-input" id="ba-email" name="billing_email" type="email" value="${esc(b.billing_email || client.email || "")}"></div>
+        <div class="p-field p-span"><label for="ba-l1">Street</label><input class="p-input" id="ba-l1" name="line1" value="${esc(b.line1 || "")}" required></div>
+        <div class="p-field p-span"><label for="ba-l2">Suite (optional)</label><input class="p-input" id="ba-l2" name="line2" value="${esc(b.line2 || "")}"></div>
+        <div class="p-field"><label for="ba-city">City</label><input class="p-input" id="ba-city" name="city" value="${esc(b.city || "")}" required></div>
+        <div class="p-field"><label for="ba-state">State</label><input class="p-input" id="ba-state" name="state" value="${esc(b.state || "")}" maxlength="2" required></div>
+        <div class="p-field"><label for="ba-zip">ZIP code</label><input class="p-input" id="ba-zip" name="postal_code" value="${esc(b.postal_code || "")}" required></div>
+        <div class="p-span"><button class="btn btn--navy btn--sm" type="submit">Save</button></div>
+      </form>`, !hasAddr)}
+    </section>`;
+
   const TAB_CARDS = {
     today: [cards.messages, cards.requests, () => cards.activity(8)],
     models: [cards.project, cards.owner, cards.pricing],
     documents: [cards.deliverables, cards.teamFiles, cards.updates, cards.drafts],
+    billing: [cards.invoices, cards.billingAddress],
     plan: [cards.milestonesManage, cards.decisions, cards.context, () => cards.activity(40)],
     people: [cards.clientCard, cards.team, cards.teamThread],
     settings: [cards.questionnaires, cards.remove, cards.closeout],
   };
-  const badges = { today: unreadMsgs + toReview, documents: draftsToReview, people: activeMembers.filter((m) => !m.last_seen_at).length };
-  const tabs = `<nav class="room-tabs room-tabs--admin" aria-label="Engagement"><div class="room-tabs__inner">${ENG_TABS.map(([k, label]) => `<a href="#engagement=${esc(id)}/${k}" class="room-tabs__link"${k === tab ? ' aria-current="page"' : ""}>${label}${badges[k] ? `<span class="room-tabs__badge${k === "people" ? " room-tabs__badge--soft" : ""}" aria-label="${badges[k]} ${k === "today" ? "waiting" : k === "documents" ? "to review" : "not signed in yet"}">${badges[k]}</span>` : ""}</a>`).join("")}</div></nav>`;
+  const badges = { today: unreadMsgs + toReview, documents: draftsToReview, billing: openInv.length, people: activeMembers.filter((m) => !m.last_seen_at).length };
+  const tabs = `<nav class="room-tabs room-tabs--admin" aria-label="Engagement"><div class="room-tabs__inner">${ENG_TABS.map(([k, label]) => `<a href="#engagement=${esc(id)}/${k}" class="room-tabs__link"${k === tab ? ' aria-current="page"' : ""}>${label}${badges[k] ? `<span class="room-tabs__badge${k === "people" ? " room-tabs__badge--soft" : ""}" aria-label="${badges[k]} ${k === "today" ? "waiting" : k === "documents" ? "to review" : k === "billing" ? "unpaid" : "not signed in yet"}">${badges[k]}</span>` : ""}</a>`).join("")}</div></nav>`;
   return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + `<div class="admin-tabs-anchor" aria-hidden="true"></div>` + tabs + `
     <div class="draft-grid admin-eng">
       <div class="p-stack">${TAB_CARDS[tab].map((fn) => fn()).join("")}</div>
@@ -671,6 +729,28 @@ main.addEventListener("submit", async (e) => {
       const n = form.notify.checked ? await store.notify("deliverable", row.id) : null;
       toastNotice(n, form.notify.checked ? "Shared. The client has been emailed." : "Shared in the client's Documents.", "Shared in the client's Documents.");
       route();
+    } else if (form.id === "invoice-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const lines = [0, 1, 2].map((i) => ({ description: v(`line_desc_${i}`), amount: v(`line_amt_${i}`).replace(/[$,\s]/g, ""), tax_code: v(`line_tax_${i}`) }))
+        .filter((l) => l.description || l.amount)
+        .map((l) => {
+          const cents = Math.round(Number(l.amount) * 100);
+          if (!l.description || !Number.isFinite(cents) || cents <= 0) throw new Error("Each line needs a description and an amount above zero.");
+          return { description: l.description, amount_cents: cents, tax_code: l.tax_code };
+        });
+      const subtotal = lines.reduce((a, l) => a + l.amount_cents, 0);
+      if (!await confirmDialog({ title: "Send this invoice?", body: `<p>${usd(subtotal)} before tax, ${lines.length} line${lines.length === 1 ? "" : "s"}. Stripe adds any sales tax, emails it to the client and shows it in their Billing tab.</p>`, confirmLabel: "Send" })) return;
+      if (btn) btn.textContent = "Sending…";
+      const r = await store.billing({ action: "create_invoice", engagement_id: engId, kind: v("kind"), description: v("description") || null,
+        days_until_due: Number(v("days_until_due")) || 15, lines, request_id: v("request_id") });
+      toast(`Invoice ${r.invoice?.number || ""} sent: ${usd(r.invoice?.total ?? subtotal)}${r.invoice?.tax ? ` including ${usd(r.invoice.tax)} tax` : ""}.`);
+      route();
+    } else if (form.id === "billing-admin-form") {
+      const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
+      const eng = await store.engagement(engId);
+      await store.billing({ action: "save_address", client_id: eng.client_id, billing_name: v("billing_name"), billing_email: v("billing_email"),
+        line1: v("line1"), line2: v("line2"), city: v("city"), state: v("state").toUpperCase(), postal_code: v("postal_code") });
+      toast("Billing address saved."); route();
     } else if (form.id === "room-form") {
       const v = (n) => form.querySelector(`[name="${n}"]`).value.trim();
       const link = v("meeting_link");
@@ -768,6 +848,14 @@ main.addEventListener("click", async (e) => {
     else if (t.dataset.deliverableDelete) {
       const d = (await store.deliverables(engagementId())).find((x) => x.id === t.dataset.deliverableDelete);
       if (d && await confirmDialog({ title: "Remove this document?", body: `<p><strong>${esc(d.title)}</strong> is deleted and disappears from the client's Documents.</p>`, confirmLabel: "Remove" })) { await store.deleteDeliverable(d); toast("Removed."); route(); }
+    }
+    else if (t.dataset.invVoid) {
+      if (await confirmDialog({ title: "Void this invoice?", body: "<p>The client can no longer pay it, and Stripe marks it void. This can't be undone; send a new invoice if the amount was wrong.</p>", confirmLabel: "Void" })) {
+        await store.billing({ action: "void_invoice", invoice_id: t.dataset.invVoid }); toast("Voided."); route();
+      }
+    }
+    else if (t.dataset.invSync) {
+      await store.billing({ action: "sync_invoice", invoice_id: t.dataset.invSync }); toast("Up to date with Stripe."); route();
     }
     else if (t.dataset.engStatus) {
       const engId = engagementId();

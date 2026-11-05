@@ -508,6 +508,18 @@ export const store = {
   },
 
   // ---- deliverables ----
+  // ---- billing (Stripe invoices; see supabase/functions/billing) ----
+  /** An engagement's invoices; a client sees only sent ones (row level security hides drafts). */
+  async invoices(engagementId) {
+    const client = await sb();
+    return check(await client.from("invoices").select("*").eq("engagement_id", engagementId).order("created_at", { ascending: false }));
+  },
+  async billingProfile(clientId) {
+    const client = await sb();
+    return check(await client.from("billing_profiles").select("*").eq("client_id", clientId).maybeSingle());
+  },
+  /** create_invoice | save_address | void_invoice | sync_invoice */
+  async billing(payload) { return invoke("billing", payload); },
   async deliverables(engagementId) {
     const client = await sb();
     return check(await client.from("deliverables").select("*").eq("engagement_id", engagementId).order("created_at", { ascending: false }));
