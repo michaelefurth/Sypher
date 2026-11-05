@@ -22,7 +22,7 @@ const KINDS = [["sole_prop", "Sole proprietorship"], ["smllc", "Single-member LL
 const USES = [["restaurant", "Restaurant or bar"], ["commercial", "Commercial / office"], ["warehouse", "Warehouse / industrial"], ["residential", "Residential rental"], ["equine", "Equine / agricultural"], ["mixed", "Mixed use"], ["land", "Land"], ["personal", "Personal residence"]];
 const RENT = [["self", "Owner's own business (self-rent)"], ["third_party", "Third-party tenant"], ["family", "Family tenant"], ["none", "No rent"]];
 const SEG = [["none", "No study"], ["estimated", "Estimated here"], ["study", "Engineering study done"]];
-const ADJ_KIND = [["addback", "Add back"], ["deduction", "Deduct"], ["nonrecurring", "Non-recurring"], ["elimination", "Related-party elimination"], ["book_tax", "Book-to-tax item"]];
+const ADJ_KIND = [["addback", "Add back"], ["deduction", "Deduct"], ["nonrecurring", "Non-recurring"], ["elimination", "Related-party elimination"], ["book_tax", "Book-to-tax item"], ["correction", "Correction to the return"]];
 const ADJ_TO = [["cash_flow", "Cash flow"], ["tax", "Tax bridge"], ["both", "Both"]];
 const EVID = [["proposed", "Proposed"], ["evidenced", "Evidenced"], ["approved", "Approved"], ["rejected", "Rejected"]];
 const SEV = [["critical", "Critical"], ["high", "High"], ["medium", "Medium"], ["low", "Low"]];
@@ -39,9 +39,11 @@ export const OWNER_TEMPLATE = {
     ["Taxes", "study_year", "Cost segregation study year", "count", CURRENT_YEAR, "estimate", "The year the catch-up deduction (Form 3115) would be taken."],
     ["Taxes", "other_income", "Other income (wages, interest, other)", "usd", 0, "estimate", null],
     ["Taxes", "itemized", "Itemized deductions (if more than the standard deduction)", "usd", 0, "estimate", null],
+    ["Taxes", "children", "Qualifying children under 17", "count", 0, "estimate", "For the child tax credit; phased out above $200,000 of income ($400,000 joint)."],
     ["Taxes", "passive_capacity", "Passive income available to absorb rental losses", "usd", 0, "estimate", "Net passive income plus any allowance; rental losses beyond it are suspended."],
     ["Owner", "living_draws", "Owner's required living draws", "usd", null, "unknown", "What the owner must take out each year to live, before taxes."],
     ["Owner", "entity_debt_service", "Annual debt service inside the businesses", "usd", null, "unknown", "Loans, equipment financing and card paydowns the businesses carry."],
+    ["Owner", "tax_installments", "Annual payments on tax balances", "usd", 0, "estimate", "Installment agreements and unpaid balances being paid down; a lender counts them as debt."],
     ["Owner", "discount_rate", "Discount rate for the timing benefit", "pct", 8, "estimate", null],
     ["Owner", "dscr_target", "Lender's minimum coverage", "x", 1.25, "estimate", null],
   ],
@@ -177,6 +179,8 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
           ${calcRow("gap", "Return less books", (p) => p.gap)}
           ${calcRow("explained", "Explained by evidenced items", (p) => (p.gap == null ? null : p.explained))}
           ${calcRow("remaining", "Unexplained", (p) => p.remaining, "om-strong")}
+          ${calcRow("corr", "Corrections to the return (change in taxable income)", (p) => p.corrections || null)}
+          ${calcRow("corrected", "Net profit as it should have been filed", (p) => (p.corrections ? p.correctedTaxNet : null))}
           ${rowOf("cash", "Cash at period end")}${rowOf("total_assets", "Total assets")}${rowOf("total_liabilities", "Total liabilities")}
           ${admin ? `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td>${field("om_periods", row.id, "source", row.source, { kind: "text", label: "Source" })}${field("om_periods", row.id, "confidence", row.confidence, { options: CONF, label: "Confidence" })}</td>`; }).join("")}</tr>` : `<tr><th scope="row">Source</th>${pr.map((p) => { const row = d.periods.find((x) => x.entity_id === e.id && x.period === p.period); return `<td class="pm-sub">${esc(row.source || "")}${row.confidence !== "firm" ? ` (${row.confidence})` : ""}</td>`; }).join("")}</tr>`}
         </tbody></table></div>` : `<p class="p-muted">No periods yet.${admin ? " Add one for each year of books." : ""}</p>`}
@@ -198,7 +202,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
       <td>${field("om_adjustments", a.id, "evidence_status", a.evidence_status, { options: EVID, label: "Evidence" })}</td>
       <td class="pm-c-act">${talk("adjustment", a.id, a.label)}${del("om_adjustments", a.id, a.label)}</td></tr>`;
     return `<div data-part="adjustments">
-      <p class="p-muted pm-note">Add-backs and deductions normalize cash flow; book-to-tax items explain the gap to the return. Only <b>evidenced</b> or <b>approved</b> items count in the figures; proposed ones are shown beside them.</p>
+      <p class="p-muted pm-note">Add-backs and deductions normalize cash flow; book-to-tax items explain the gap to the return; corrections are errors on the filed return (a deduction that should not have been taken is a negative amount) and feed the tax estimate. Only <b>evidenced</b> or <b>approved</b> items count in the figures; proposed ones are shown beside them.</p>
       ${rows.length ? `<div class="pm-wrap"><table class="pm-table om-table om-table--adj"><thead><tr><th scope="col">Entity</th><th scope="col">Period</th><th scope="col">Item</th><th scope="col">Kind</th><th scope="col">Applies to</th><th class="pm-c-num" scope="col">Amount</th><th scope="col">Evidence</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead><tbody>${rows.map(r).join("")}</tbody></table></div>` : `<p class="p-muted">No adjustments yet.</p>`}
       ${admin ? `<p><button type="button" class="p-linkbtn" data-add-adj>+ Add an adjustment</button></p>` : ""}
     </div>`;
@@ -273,11 +277,11 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
 
   function taxes() {
     const t = result.tax;
-    const col = (x) => [money(x.seNetTotal), money(x.seTax), money(x.agi), money(x.deduction), money(x.qbi) + (x.qbiLimited ? " (limited)" : ""), money(x.taxable), money(x.incomeTax), money(x.niit), money(x.total), pct(x.bracket, 0), pct(x.effective)];
-    const labels = ["Net earnings from the trades", "Self-employment tax", "Adjusted gross income", "Deduction (standard or itemized)", "Qualified business income deduction", "Taxable income", "Income tax", "Net investment income tax", "Total federal tax", "Marginal bracket", "Effective rate on AGI"];
+    const col = (x) => [money(x.seNetTotal), money(x.seTax), money(x.agi), money(x.deduction), money(x.qbi) + (x.qbiLimited ? " (limited)" : ""), money(x.taxable), money(x.incomeTax), money(-x.ctc), money(x.niit), money(x.total), pct(x.bracket, 0), pct(x.effective)];
+    const labels = ["Net earnings from the trades", "Self-employment tax", "Adjusted gross income", "Deduction (standard or itemized)", "Qualified business income deduction", "Taxable income", "Income tax", "Child tax credit", "Net investment income tax", "Total federal tax", "Marginal bracket", "Effective rate on AGI"];
     const cols = [[`${t.focus.year} (filed year)`, t.focus], [`${t.studyBase.year} before the study`, t.studyBase], [`${t.studyBase.year} with the study`, t.studySeg]];
     return `<div data-part="taxes"><div class="pm-wrap"><table class="pm-table pm-table--years"><thead><tr><th scope="col"></th>${cols.map(([h]) => `<th class="pm-c-num" scope="col">${esc(h)}</th>`).join("")}</tr></thead><tbody>
-      ${labels.map((l, i) => `<tr class="${i === 8 ? "pm-total" : ""}"><th scope="row">${l}</th>${cols.map(([, x]) => `<td class="pm-c-num">${col(x)[i]}</td>`).join("")}</tr>`).join("")}
+      ${labels.map((l, i) => `<tr class="${i === 9 ? "pm-total" : ""}"><th scope="row">${l}</th>${cols.map(([, x]) => `<td class="pm-c-num">${col(x)[i]}</td>`).join("")}</tr>`).join("")}
     </tbody></table></div>
     <p class="p-muted pm-note">Filing as ${esc(FILING.find(([k]) => k === result.filing)?.[1] || result.filing)}. The study year uses the latest full year's figures for each trade unless that year's books are in. Federal only: Texas has no individual income tax, and the franchise tax applies above the no-tax-due threshold. These are estimates to size decisions, not a return.</p></div>`;
   }
@@ -294,7 +298,7 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
         ${row("Available for debt service", g.available, "pm-total")}
       </tbody></table>
       <table class="pm-mini"><caption>Debt service and coverage</caption><tbody>
-        ${row("Properties", g.propertyDs)}${row("Inside the businesses", result.inputs.entity_debt_service)}
+        ${row("Properties", g.propertyDs)}${row("Inside the businesses", result.inputs.entity_debt_service)}${g.taxDs ? row("Tax balances", g.taxDs) : ""}
         ${row("Existing debt service", g.existingDs, "pm-total")}
         <tr><td>Coverage of existing debt</td><td class="pm-c-num ${g.dscr == null ? "" : g.dscr >= g.target ? "is-under" : "is-over"}">${times(g.dscr)}</td></tr>
         ${g.withProject ? `${row("Project cash flow (year 2)", g.withProject.cfads)}${row("Project debt service (year 2)", g.withProject.ds)}<tr><td>Coverage with the project</td><td class="pm-c-num ${g.withProject.dscr >= g.target ? "is-under" : "is-over"}">${times(g.withProject.dscr)}</td></tr><tr><td>…with the cost segregation tax saved</td><td class="pm-c-num ${g.withProject.dscrSeg >= g.target ? "is-under" : "is-over"}">${times(g.withProject.dscrSeg)}</td></tr>` : ""}

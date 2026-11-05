@@ -82,15 +82,16 @@ create table if not exists public.om_periods (
 );
 create index if not exists om_periods_model_idx on public.om_periods (model_id, entity_id, position);
 
--- Adjustments: add-backs and deductions that normalize cash flow, and the items that bridge
--- the books to the return. Only evidenced or approved ones count in the figures.
+-- Adjustments: add-backs and deductions that normalize cash flow, the items that bridge the
+-- books to the return, and corrections (errors on the filed return: they change taxable
+-- income, not the bridge). Only evidenced or approved ones count in the figures.
 create table if not exists public.om_adjustments (
   id               uuid primary key default gen_random_uuid(),
   model_id         uuid not null references public.om_models (id) on delete cascade,
   engagement_id    uuid not null references public.engagements (id) on delete cascade,
   entity_id        uuid references public.om_entities (id) on delete cascade,
   period           text not null,
-  kind             text not null check (kind in ('addback', 'deduction', 'nonrecurring', 'elimination', 'book_tax')),
+  kind             text not null check (kind in ('addback', 'deduction', 'nonrecurring', 'elimination', 'book_tax', 'correction')),
   applies_to       text not null default 'both' check (applies_to in ('cash_flow', 'tax', 'both')),
   label            text not null,
   amount           numeric(14, 2),

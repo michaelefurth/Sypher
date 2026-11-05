@@ -71,6 +71,14 @@ const total = (s) => Object.values(s).reduce((a, b) => a + b, 0);
   const mfj = taxEstimate({ year: 2024, filing: "mfj", businesses: [{ name: "A", net: 80000 }], other: 40000 });
   ok("2024 married filing jointly uses the $29,200 deduction and the 12% bracket", mfj.deduction === 29200 && mfj.bracket === 0.12);
   ok("an unknown year falls back to the nearest parameters", taxParams(2030) === taxParams(2026) && taxParams(2020) === taxParams(2024));
+  // A filed 2025 return, reproduced: head of household, two children, two Schedule Cs, one with W-2 payroll.
+  const filed = taxEstimate({ year: 2025, filing: "hoh", businesses: [{ name: "Horses", net: 138521 }, { name: "Restaurant", net: 114315, w2_wages: 271510 }], children: 2 });
+  ok("the filed 2025 return is reproduced: SE tax", near(filed.seTax, 28607 + 301, 2), filed.seTax.toFixed(0));
+  ok("the filed 2025 return is reproduced: AGI and QBI", near(filed.agi, 238532, 2) && near(filed.qbi, 38504, 5), `${filed.agi.toFixed(0)} / ${filed.qbi.toFixed(0)}`);
+  ok("the filed 2025 return is reproduced: income tax and the child tax credit", near(filed.incomeTax, 33445, 3) && near(filed.ctc, 2450, 1), `${filed.incomeTax.toFixed(0)} / ${filed.ctc}`);
+  ok("the filed 2025 return is reproduced: total tax", near(filed.total, 59903, 5), filed.total.toFixed(0));
+  const filed24 = taxEstimate({ year: 2024, filing: "hoh", businesses: [{ name: "Restaurant", net: 160736 }, { name: "Horses", net: 28983 }], children: 2 });
+  ok("the filed 2024 return is reproduced: total tax", near(filed24.total, 43062, 5) && near(filed24.ctc, 4000, 1) && near(filed24.qbi, 30965, 5), `${filed24.total.toFixed(0)} / ${filed24.qbi.toFixed(0)}`);
   const low = taxEstimate({ year: 2026, filing: "single", businesses: [{ name: "A", net: 60000 }] });
   ok("below the threshold QBI is 20% of income net of half SE tax, capped at 20% of taxable income", near(low.qbi, Math.min(0.2 * (60000 - low.seTax / 2), 0.2 * (low.agi - low.deduction)), 1) && low.bracket === 0.12 && near(low.seMarginal, 0.153 * 0.9235, 0.001));
 }
@@ -87,6 +95,7 @@ const total = (s) => Object.values(s).reduce((a, b) => a + b, 0);
     { entity_id: "e1", period: "2024", kind: "book_tax", amount: 13641.48, applies_to: "tax", evidence_status: "proposed" },
     { entity_id: "e1", period: "2025", kind: "nonrecurring", amount: 10000, applies_to: "cash_flow", evidence_status: "approved" },
     { entity_id: "e1", period: "2025", kind: "addback", amount: 5000, applies_to: "both", evidence_status: "proposed" },
+    { entity_id: "e1", period: "2025", kind: "correction", amount: -70500, applies_to: "tax", evidence_status: "evidenced" },
   ];
   const n = normalizeEntity(e, periods, adj);
   const y24 = n.periods[0], y25 = n.periods[1], ytd = n.periods[2];
@@ -94,6 +103,7 @@ const total = (s) => Object.values(s).reduce((a, b) => a + b, 0);
   ok("only evidenced adjustments explain the bridge", near(y24.explained, 90000, 0.01) && near(y24.remaining, 13641.48, 0.01));
   ok("related-party rent is added back to cash flow available for debt service", near(y25.cfads, 109608.28 + 70500 - 10000, 0.01));
   ok("proposed cash-flow adjustments are shown but not counted", near(y25.proposedCf, 5000, 0.01) && !near(y25.cfads, 109608.28 + 70500 - 10000 + 5000, 0.01));
+  ok("a correction changes what should have been filed, not the bridge", y25.remaining === 4706.72 && y25.corrections === 70500 && y25.correctedTaxNet === 114315 + 70500);
   ok("a part year is annualized, and the latest full year is the recurring reference", near(ytd.cfadsAnnual, (203825.23 * 12) / 10, 0.01) && n.latest.period === "2025");
   ok("margins are worked out from the books", near(y25.grossMargin, (1304410.07 - 549850.76) / 1304410.07, 0.0001));
 }
@@ -118,6 +128,7 @@ const total = (s) => Object.values(s).reduce((a, b) => a + b, 0);
   ok("the recurring cash flow adds every entity, using an override where given", near(r.global.cfads, 109608.28 + 70500 + 20000, 0.01));
   ok("third-party rents count net of costs; self-rent is eliminated", r.global.rentsNet === 8000 && r.global.selfRents === 70500);
   ok("existing debt service adds the properties' and the entities'", r.global.existingDs === 7200 + 24000);
+  ok("tax installments count as debt service", calculateOwner({ entities, periods, properties, components, inputs: [...inputs, { key: "tax_installments", unit: "usd", value: 7176, status: "estimate" }], findings }).global.existingDs === 7200 + 24000 + 7176);
   ok("the owner's taxes and living draws come out before coverage", near(r.global.available, r.global.cfads + 8000 - r.tax.studyBase.total - 90000, 0.01) && r.global.dscr === r.global.available / r.global.existingDs);
   ok("the study-year tax falls by the usable deductions", r.seg.taxSaved > 0 && r.tax.studySeg.total < r.tax.studyBase.total);
   ok("the self-rented building's extra deduction reduces the business's own net earnings", r.tax.studySeg.seNetTotal < r.tax.studyBase.seNetTotal);

@@ -32,6 +32,7 @@ export const TAX = {
     standard: { single: 14600, mfj: 29200, hoh: 21900 },
     ssWageBase: 168600, qbiThreshold: { single: 191950, mfj: 383900, hoh: 191950 }, qbiPhase: { single: 50000, mfj: 100000, hoh: 50000 },
     s179: { limit: 1220000, phaseOut: 3050000 },
+    ctc: 2000,
   },
   2025: {
     brackets: {
@@ -42,6 +43,7 @@ export const TAX = {
     standard: { single: 15750, mfj: 31500, hoh: 23625 },
     ssWageBase: 176100, qbiThreshold: { single: 197300, mfj: 394600, hoh: 197300 }, qbiPhase: { single: 50000, mfj: 100000, hoh: 50000 },
     s179: { limit: 2500000, phaseOut: 4000000 },
+    ctc: 2200,
   },
   2026: {
     brackets: {
@@ -52,6 +54,7 @@ export const TAX = {
     standard: { single: 16100, mfj: 32200, hoh: 24150 },
     ssWageBase: 184500, qbiThreshold: { single: 201775, mfj: 403550, hoh: 201775 }, qbiPhase: { single: 75000, mfj: 150000, hoh: 75000 },
     s179: { limit: 2560000, phaseOut: 4090000 },
+    ctc: 2200,
   },
 };
 export const FILING = [["single", "Single"], ["mfj", "Married filing jointly"], ["hoh", "Head of household"]];
@@ -240,8 +243,9 @@ function marginalRate(taxable, brackets) {
  *   rental      net Schedule E (passive) income or loss actually allowed
  *   other       wages, interest, other ordinary income
  *   itemized    itemized deductions if larger than the standard deduction
+ *   children    qualifying children under 17 (the child tax credit, phased out above $200,000 / $400,000)
  */
-export function taxEstimate({ year = CURRENT_YEAR, filing = "single", businesses = [], rental = 0, other = 0, itemized = 0, extraDeductions = 0 }) {
+export function taxEstimate({ year = CURRENT_YEAR, filing = "single", businesses = [], rental = 0, other = 0, itemized = 0, extraDeductions = 0, children = 0 }) {
   const P = taxParams(year);
   const fs = FILING.some(([k]) => k === filing) ? filing : "single";
   const seNetTotal = sum(businesses, (b) => num(b.net));
@@ -271,8 +275,12 @@ export function taxEstimate({ year = CURRENT_YEAR, filing = "single", businesses
   qbi = Math.min(qbi, before * 0.2);
   const taxable = Math.max(0, before - qbi);
   const income = round2(bracketTax(taxable, P.brackets[fs]));
+  // Child tax credit: so much per child, less 5% of each $1,000 (or part) of income over the threshold, limited to the income tax.
+  const kids = Math.max(0, Math.round(num(children) || 0));
+  const ctcThreshold = fs === "mfj" ? 400000 : 200000;
+  const ctc = kids ? Math.max(0, Math.min(income, kids * (P.ctc || 0) - Math.ceil(Math.max(0, agi - ctcThreshold) / 1000) * 50)) : 0;
   const niit = Math.max(0, Math.min(Math.max(0, num(rental) || 0), Math.max(0, agi - addlMedicareThreshold(fs)))) * NIIT;
-  const total = round2(income + seTax + addl + niit);
+  const total = round2(income - ctc + seTax + addl + niit);
   const bracket = marginalRate(taxable, P.brackets[fs]);
   // The rate the next dollar of business deduction saves: income tax, SE tax (Medicare only
   // above the wage base), less the 20% of it that was QBI deduction if that applies.
@@ -280,13 +288,13 @@ export function taxEstimate({ year = CURRENT_YEAR, filing = "single", businesses
   const qbiActive = qbi > 0 && !qbiLimited ? 0.8 : 1;
   return {
     year, filing: fs, seNetTotal, seTax: round2(seTax + addl), agi: round2(agi), deduction, qbi: round2(qbi), qbiLimited, before: round2(before), taxable: round2(taxable),
-    incomeTax: income, niit: round2(niit), total, bracket, seMarginal: round2(seMarginal * SE_FACTOR * 1000) / 1000, qbiFactor: qbiActive,
+    incomeTax: income, ctc: round2(ctc), niit: round2(niit), total, bracket, seMarginal: round2(seMarginal * SE_FACTOR * 1000) / 1000, qbiFactor: qbiActive,
     effective: agi > 0 ? total / agi : null, params: P,
   };
 }
 
 /* ============================================================== entities and periods */
-const ADJ_SIGN = { addback: 1, deduction: -1, nonrecurring: -1, elimination: 1, book_tax: 0 };
+const ADJ_SIGN = { addback: 1, deduction: -1, nonrecurring: -1, elimination: 1, book_tax: 0, correction: 0 };
 /**
  * Normalize one entity's periods.
  *   periods     [{ period, revenue, cogs, opex, depreciation, interest, rent_paid, rent_related, owner_comp,
@@ -307,12 +315,16 @@ export function normalizeEntity(entity, periods = [], adjustments = []) {
     const ebitda = ni == null ? null : round2(ni + (book.depreciation || 0) + (book.interest || 0));
     const cfads = ni == null ? null : round2(ebitda + (book.rent_related || 0) + (book.owner_comp || 0) + cfAdj);
     const gap = book.tax_net != null && ni != null ? round2(book.tax_net - ni) : null;
-    const explained = sum(counted.filter((a) => a.applies_to !== "cash_flow"), (a) => num(a.amount) || 0);
+    // Book-to-tax items explain the gap; corrections are errors on the return (a deduction that
+    // should not have been taken is negative) and change what taxable income should have been.
+    const explained = sum(counted.filter((a) => a.applies_to !== "cash_flow" && a.kind !== "correction"), (a) => num(a.amount) || 0);
     const remaining = gap == null ? null : round2(gap - explained);
+    const corrections = round2(-sum(counted.filter((a) => a.kind === "correction"), (a) => num(a.amount) || 0));
+    const correctedTaxNet = book.tax_net == null ? null : round2(book.tax_net + corrections);
     const months = num(pr.months) || 12;
     const annualize = (x) => (x == null ? null : round2((x * 12) / months));
     return {
-      period: pr.period, months, book, ni, ebitda, cfads, cfadsAnnual: annualize(cfads), gap, explained, remaining, proposedCf,
+      period: pr.period, months, book, ni, ebitda, cfads, cfadsAnnual: annualize(cfads), gap, explained, remaining, corrections, correctedTaxNet, proposedCf,
       margin: book.revenue ? (ni ?? 0) / book.revenue : null, grossMargin: book.revenue && book.cogs != null ? (book.revenue - book.cogs) / book.revenue : null,
       adjustments: adj,
     };
@@ -323,7 +335,7 @@ export function normalizeEntity(entity, periods = [], adjustments = []) {
 }
 
 /* ============================================================== the whole model */
-export const INPUT_KEYS = ["filing_status", "tax_year", "study_year", "other_income", "itemized", "discount_rate", "living_draws", "entity_debt_service", "dscr_target", "passive_capacity", "w2_wages_total", "project_cfads", "project_debt_service"];
+export const INPUT_KEYS = ["filing_status", "tax_year", "study_year", "other_income", "itemized", "children", "discount_rate", "living_draws", "entity_debt_service", "tax_installments", "dscr_target", "passive_capacity", "project_cfads", "project_debt_service"];
 /**
  * Work the model out.
  *   model, entities, periods, adjustments, properties, components, inputs ({key,value,text_value,status})
@@ -347,18 +359,19 @@ export function calculateOwner({ model = {}, entities = [], periods = [], adjust
   // latest full year on record (the study year is usually still open).
   const netFor = (e, year) => {
     const pr = e.periods.find((x) => String(x.period) === String(year) && (x.book.tax_net != null || x.months >= 12));
-    if (pr) return pr.book.tax_net ?? pr.ni ?? 0;
+    if (pr) return pr.correctedTaxNet ?? pr.ni ?? 0;
     const full = e.periods.filter((x) => x.months >= 12);
     const last = full[full.length - 1];
-    return last ? last.book.tax_net ?? last.ni ?? 0 : 0;
+    return last ? last.correctedTaxNet ?? last.ni ?? 0 : 0;
   };
   const bizFor = (year) => ents.filter((e) => ["sole_prop", "smllc"].includes(e.entity.kind)).map((e) => ({
     id: e.entity.id, name: e.entity.name, net: netFor(e, year), w2_wages: num(e.entity.w2_wages) || 0, ubia: num(e.entity.ubia) || 0, sstb: !!e.entity.sstb,
   }));
   const rentalNet = (year) => sum(properties.filter((p) => p.rent_source === "third_party" || p.rent_source === "family"), (p) => (num(p.annual_rent) || 0) - (num(p.annual_opex) || 0) - (num(p.annual_interest) || 0));
-  const taxFocus = taxEstimate({ year: taxYear, filing, businesses: bizFor(taxYear), rental: rentalNet(taxYear), other: v.other_income || 0, itemized: v.itemized || 0 });
+  const kids = v.children || 0;
+  const taxFocus = taxEstimate({ year: taxYear, filing, businesses: bizFor(taxYear), rental: rentalNet(taxYear), other: v.other_income || 0, itemized: v.itemized || 0, children: kids });
   const bizStudy = bizFor(study);
-  const taxStudyBase = taxEstimate({ year: study, filing, businesses: bizStudy, rental: rentalNet(study), other: v.other_income || 0, itemized: v.itemized || 0 });
+  const taxStudyBase = taxEstimate({ year: study, filing, businesses: bizStudy, rental: rentalNet(study), other: v.other_income || 0, itemized: v.itemized || 0, children: kids });
 
   // Properties and cost segregation, valued at the study-year rates.
   const props = properties.map((p) => {
@@ -384,7 +397,7 @@ export function calculateOwner({ model = {}, entities = [], periods = [], adjust
       if (target) target.net -= x.schedule.usable; else passiveExtra += x.schedule.usable;
     } else passiveExtra += x.schedule.usable;
   }
-  const taxStudySeg = taxEstimate({ year: study, filing, businesses: bizWithSeg, rental: rentalNet(study) - passiveExtra, other: v.other_income || 0, itemized: v.itemized || 0 });
+  const taxStudySeg = taxEstimate({ year: study, filing, businesses: bizWithSeg, rental: rentalNet(study) - passiveExtra, other: v.other_income || 0, itemized: v.itemized || 0, children: kids });
   seg.taxSaved = round2(taxStudyBase.total - taxStudySeg.total);
   // Deductions beyond the year's income become a net operating loss, carried forward (and
   // limited to 80% of a later year's income); its value is shown at the study-year bracket.
@@ -397,13 +410,14 @@ export function calculateOwner({ model = {}, entities = [], periods = [], adjust
   const propertyDs = sum(props, (x) => x.ds);
   const taxesNow = taxStudyBase.total;
   const draws = v.living_draws ?? null;
-  const existingDs = round2(propertyDs + (v.entity_debt_service || 0));
+  const taxDs = v.tax_installments || 0;
+  const existingDs = round2(propertyDs + (v.entity_debt_service || 0) + taxDs);
   const available = cfadsTotal == null || draws == null ? null : round2(cfadsTotal + rentsNet - taxesNow - draws);
   const availableSeg = available == null ? null : round2(available + seg.taxSaved);
   const dscr = available != null && existingDs ? available / existingDs : null;
   const pcf = project?.years?.[1]?.ebitda ?? v.project_cfads ?? null, pds = project?.years?.[1]?.ds ?? v.project_debt_service ?? null;
   const withProject = available != null && pcf != null && pds != null ? { cfads: pcf, ds: pds, dscr: existingDs + pds ? (available + pcf) / (existingDs + pds) : null, dscrSeg: existingDs + pds ? (availableSeg + pcf) / (existingDs + pds) : null } : null;
-  const global = { cfads: cfadsTotal, rentsNet, selfRents, taxes: taxesNow, draws, available, availableSeg, existingDs, propertyDs, dscr, withProject, target: v.dscr_target ?? 1.25 };
+  const global = { cfads: cfadsTotal, rentsNet, selfRents, taxes: taxesNow, draws, available, availableSeg, existingDs, propertyDs, taxDs, dscr, withProject, target: v.dscr_target ?? 1.25 };
 
   // Findings and what is missing.
   const open = findings.filter((f) => ["open", "in_progress"].includes(f.status));
