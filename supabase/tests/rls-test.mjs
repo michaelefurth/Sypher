@@ -650,7 +650,19 @@ await as(CPA, async () => {
 });
 ok("the accountant's owner-model answer moves their request to review", (await rows(`select status from public.action_items where link_kind = 'om_input'`))[0].status === "submitted");
 ok("the client's owner-model comment alerts Michael and the accountant with access, nobody else", (await rows(`select user_id from public.notifications where kind = 'comment' and link = 'owner'`)).map((r) => r.user_id).sort().join() === [ADMIN, CPA].sort().join());
-await as(B, async () => { ok("another client can't see the owner model", (await rows(`select * from public.om_models`)).length === 0 && (await rows(`select * from public.om_comments`)).length === 0); });
+// --- Personal items (20261109000000_owner_personal) ---
+await as(ADMIN, async () => {
+  await q(`insert into public.om_personal (model_id, engagement_id, category, label, amount, liability, status) values ('${OM}', '${ENG_A}', 'agreement', 'Partition agreement', null, null, 'needed')`);
+  ok("a personal item must use a known category", await fails(`insert into public.om_personal (model_id, engagement_id, category, label) values ('${OM}', '${ENG_A}', 'horses', 'x')`));
+});
+await as(A, async () => {
+  ok("the client sees the owner's personal items", (await rows(`select * from public.om_personal`)).length === 1);
+  ok("the client can't change them", (await rows(`update public.om_personal set status = 'resolved' returning id`)).length === 0);
+});
+await as(CPA, async () => { ok("the accountant with access sees the personal items", (await rows(`select * from public.om_personal`)).length === 1); });
+await as(LAW, async () => { ok("advisers without model access don't see the personal items", (await rows(`select * from public.om_personal`)).length === 0); });
+await as(CT, async () => { ok("the contractor never sees the personal items", (await rows(`select * from public.om_personal`)).length === 0); });
+await as(B, async () => { ok("another client can't see the owner model", (await rows(`select * from public.om_models`)).length === 0 && (await rows(`select * from public.om_comments`)).length === 0 && (await rows(`select * from public.om_personal`)).length === 0); });
 await asAnon(async () => { ok("signed-out visitors can't reach the owner model", await fails(`select public.om_set_input('${OI_DRAWS}', 1, null, 'confirmed', null)`) && await fails(`select * from public.om_models`)); });
 
 console.log(results.join("\n"));
