@@ -4,7 +4,7 @@
 // An engagement page has six tabs: today (messages, requests, activity), models, documents,
 // plan, people and settings; the next conversation and the milestones stay beside every tab.
 import { store, progressOf, FILE_ACCEPT, checkFile } from "./store.js";
-import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, toastNotice, confirmDialog, promptDialog, statusPill, progressBar, download } from "./ui.js";
+import { esc, paragraphs, fileLabel, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, toastNotice, confirmDialog, promptDialog, statusPill, progressBar, download } from "./ui.js";
 import { SOV_TEMPLATES, sovTotals, sheetPill, money } from "./sov.js";
 import { mountBell } from "./bell.js";
 import { createFromTemplate, modelSummary } from "./model.js";
@@ -169,7 +169,7 @@ async function viewEngagement(id, tab = "today") {
   const disclosure = (label, inner, open = false) => `<details class="room-add"${open ? " open" : ""}><summary class="p-linkbtn">${label}</summary>${inner}</details>`;
   const docRow = (d) => `<li class="doc">
     <span class="doc__icon" aria-hidden="true">${esc((d.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
-    <div class="doc__body"><p class="doc__title">${esc(d.title)}${d.shared_with_team ? ` <span class="pill pill--teal">Team can see</span>` : ""}</p>${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
+    <div class="doc__body"><p class="doc__title">${fileLabel(d.title)}${d.shared_with_team ? ` <span class="pill pill--teal">Team can see</span>` : ""}</p>${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
       <p class="doc__meta">${d.milestone_id && msName.has(d.milestone_id) ? `${esc(msName.get(d.milestone_id))} · ` : ""}${esc(fmtDate(d.created_at, { month: "short", day: "numeric" }))}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}</p></div>
     <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(d.path)}">Open</button>${members.length ? `<button class="p-linkbtn" data-deliverable-share="${esc(d.id)}" data-share="${d.shared_with_team ? "0" : "1"}">${d.shared_with_team ? "Unshare" : "Share with team"}</button>` : ""}<button class="p-linkbtn" data-deliverable-delete="${esc(d.id)}">Remove</button></div></li>`;
 
@@ -192,7 +192,7 @@ async function viewEngagement(id, tab = "today") {
           ${a.detail ? `<p class="req__detail">${esc(a.detail)}</p>` : ""}
           ${a.response ? `<div class="req__answer"><b>${esc(a.submitted_by ? who(a.submitted_by) : "Answer")}</b>${paragraphs(a.response)}</div>` : ""}
           ${a.review_note ? `<p class="req__meta">Review note: ${esc(a.review_note)}</p>` : ""}
-          ${files.length ? `<ul class="req__files">${files.map((f) => `<li><button type="button" class="req__file" data-open-file="${esc(f.path)}"><span aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>${esc(f.name)} <small>${esc(who(f.uploaded_by))}</small></button></li>`).join("")}</ul>` : ""}
+          ${files.length ? `<ul class="req__files">${files.map((f) => `<li><button type="button" class="req__file" data-open-file="${esc(f.path)}"><span aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>${fileLabel(f.name)} <small>${esc(who(f.uploaded_by))}</small></button></li>`).join("")}</ul>` : ""}
           <div class="req__actions">
             ${a.status === "submitted" && a.kind !== "pricing" ? `<button class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button><button class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>` : ""}
             ${a.kind === "pricing" && a.link_ref ? `<a class="p-linkbtn" href="pricing.html?s=${esc(a.link_ref)}">Open the sheet</a>` : ""}
@@ -271,7 +271,7 @@ async function viewEngagement(id, tab = "today") {
     </section>`,
     teamFiles: () => (teamFiles.length ? `<section class="p-card"><p class="p-kicker">Team files</p><ul class="doc-list">${teamFiles.map((f) => `<li class="doc">
       <span class="doc__icon doc__icon--mine" aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
-      <div class="doc__body"><p class="doc__title">${esc(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}<p class="doc__meta">${esc(who(f.uploaded_by))} · ${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
+      <div class="doc__body"><p class="doc__title">${fileLabel(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}<p class="doc__meta">${esc(who(f.uploaded_by))} · ${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
       <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(f.path)}">Open</button><button class="p-linkbtn" data-team-file-delete="${esc(f.id)}">Remove</button></div></li>`).join("")}</ul></section>` : ""),
     updates: () => `<section class="p-card"><p class="p-kicker">Published updates</p>
       ${pubs.length ? `<ul class="p-list">${pubs.map((p) => `<li><div class="p-row"><h2 class="p-item">${esc(p.title)}</h2><span class="p-muted">${esc(fmtDate(p.published_at))}</span></div></li>`).join("")}</ul>` : `<p class="p-muted">Nothing published yet. Updates come from the AI drafts below, or you write one here.</p>`}
@@ -407,7 +407,7 @@ async function viewEngagement(id, tab = "today") {
   };
   const badges = { today: unreadMsgs + toReview, documents: draftsToReview, people: activeMembers.filter((m) => !m.last_seen_at).length };
   const tabs = `<nav class="room-tabs room-tabs--admin" aria-label="Engagement"><div class="room-tabs__inner">${ENG_TABS.map(([k, label]) => `<a href="#engagement=${esc(id)}/${k}" class="room-tabs__link"${k === tab ? ' aria-current="page"' : ""}>${label}${badges[k] ? `<span class="room-tabs__badge${k === "people" ? " room-tabs__badge--soft" : ""}" aria-label="${badges[k]} ${k === "today" ? "waiting" : k === "documents" ? "to review" : "not signed in yet"}">${badges[k]}</span>` : ""}</a>`).join("")}</div></nav>`;
-  return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + tabs + `
+  return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + `<div class="admin-tabs-anchor" aria-hidden="true"></div>` + tabs + `
     <div class="draft-grid admin-eng">
       <div class="p-stack">${TAB_CARDS[tab].map((fn) => fn()).join("")}</div>
       <div class="p-stack admin-side">${side}</div>
@@ -550,10 +550,20 @@ const TEMPLATE = {
 };
 
 /* ------------------------------------------------------------ router/bind */
+let lastEng = null, lastTab = null;
+/** The scroll position that puts the engagement's tabs just under the header. */
+// Measured from a marker just above the strip: the strip itself is sticky, so once the page
+// scrolls it reports where it is stuck, not where it sits.
+const stripTop = () => { const s = document.querySelector(".admin-tabs-anchor"); return s ? s.getBoundingClientRect().top + window.scrollY - (document.getElementById("p-header")?.offsetHeight || 0) : 0; };
 async function route() {
   const hash = location.hash.slice(1) || "overview";
   const [key, arg] = hash.split("=");
-  main.innerHTML = `<div class="p-loading">Loading…</div>`;
+  // Within one engagement, keep the page up while the next view loads: a tab switch shouldn't
+  // flash "Loading…", and a refresh after an action should leave you where you were.
+  const sameEng = key === "engagement" && engagementId() === lastEng;
+  const tabChanged = sameEng && engTab() !== lastTab;
+  const y = window.scrollY, belowTabs = sameEng && y > stripTop();
+  if (!sameEng) main.innerHTML = `<div class="p-loading">Loading…</div>`;
   try {
     const c = await counts();
     let body, active = key;
@@ -569,7 +579,11 @@ async function route() {
     else if (key === "questionnaires") body = await viewQuestionnaires();
     else { body = await viewOverview(c); active = "overview"; }
     main.innerHTML = shell(active, c, body);
-    window.scrollTo(0, 0);
+    lastEng = key === "engagement" ? engagementId() : null;
+    lastTab = key === "engagement" ? engTab() : null;
+    if (!sameEng) window.scrollTo(0, 0);
+    else if (tabChanged) { if (belowTabs) window.scrollTo(0, stripTop()); }
+    else window.scrollTo(0, y);
     document.querySelectorAll(".admin-thread").forEach((t) => { t.scrollTop = t.scrollHeight; }); // newest messages in view
   } catch (err) {
     console.error(err);
@@ -709,6 +723,7 @@ main.addEventListener("submit", async (e) => {
 main.addEventListener("click", async (e) => {
   const t = e.target.closest("button, a");
   if (!t) return;
+  if (t.matches(".room-tabs--admin .room-tabs__link[aria-current='page']") && window.scrollY > stripTop() + 4) { e.preventDefault(); window.scrollTo({ top: stripTop(), behavior: "smooth" }); return; }
   try {
     if (await pipelineClick(t, route)) return;
     if (t.dataset.msDelete) { await store.deleteMilestone(t.dataset.msDelete); route(); }

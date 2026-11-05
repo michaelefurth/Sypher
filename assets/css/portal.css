@@ -1067,3 +1067,14 @@ span.pm-st { display: inline-block; margin-top: 0.25rem; }
 .sov-c-unit { min-width: 4.2rem; }
 .sov-c-st { min-width: 7.4rem; }
 .pm-table td.pm-c-act { min-width: 5.4rem; }
+
+/* Room and admin: layout fixes from the three-view audit */
+.req-page { margin-inline: auto; }
+.wait-group__who { flex-wrap: wrap; row-gap: 0.1rem; }
+.wait-group__who b, .wait-group__who strong { white-space: nowrap; }
+.req-ask > summary { white-space: nowrap; }
+.msg__body a, .req__answer a, .room-update-item a { color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+/* On a narrow screen the tab strip fades at its right edge, a hint that it scrolls sideways */
+@media (max-width: 900px) {
+  .room-tabs__inner { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 2.5rem), transparent); padding-right: 2.5rem; }
+}
