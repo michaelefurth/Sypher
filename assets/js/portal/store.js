@@ -176,10 +176,12 @@ export const store = {
   },
   async sendMagicLink(email, next) {
     const client = await sb();
-    check(await client.auth.signInWithOtp({
+    const { error } = await client.auth.signInWithOtp({
       email,
       options: { shouldCreateUser: false, emailRedirectTo: new URL(next || "dashboard.html", location.href).href },
-    }));
+    });
+    // Keep Supabase's code and status so the sign-in page can tell "no account" from "wait" and "not sent".
+    if (error) throw Object.assign(new Error(error.message), { code: error.code, status: error.status });
   },
   /** Sign in with the 6-digit code from the sign-in email (the fallback when a mail scanner has used the link). */
   async verifyEmailCode(email, code) {

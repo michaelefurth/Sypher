@@ -921,7 +921,7 @@ span.pm-st { display: inline-block; margin-top: 0.25rem; }
 .om-table .om-calc th { font-style: italic; color: var(--muted); }
 .om-table .om-strong th { font-weight: 500; color: var(--navy); font-style: normal; }
 .om-table .om-strong td { font-weight: 500; color: var(--navy); }
-.om-table--adj td .pm-in--label { min-width: 12rem; }
+.om-table--adj td:nth-child(2) .pm-in--label { min-width: 0; width: 5.5rem; }
 .om-table--comp td .pm-in--num { min-width: 5.5rem; }
 .om-del-col { margin-left: 0.3rem; vertical-align: middle; }
 .om-date { width: auto; }
@@ -1010,3 +1010,32 @@ span.pm-st { display: inline-block; margin-top: 0.25rem; }
 .admin-side { position: sticky; top: calc(74px + 4.5rem); }
 .admin-ms .p-select--sm { width: auto; }
 @media (max-width: 1100px) { .admin-side { position: static; } }
+
+/* Owner model: text that wraps instead of being cut off, a cleaner property title, quieter disclosures */
+.om-area { min-height: 2.1rem; resize: none; overflow: hidden; line-height: 1.45; }
+.om-adj__item { min-width: 18rem; }
+.om-adj__item .om-area, .om-comp__class .om-area { width: 100%; min-width: 16rem; }
+.om-adj__item .pm-sub .om-area { font-size: 0.8rem; color: var(--muted); }
+.om-comp__class { min-width: 19rem; }
+.om-comp__class .om-area { margin-top: 0.15rem; font-size: 0.85rem; }
+.om-table--comp th .pm-sub { color: var(--on-dark-muted); text-transform: none; letter-spacing: 0; font-size: 0.68rem; }
+.om-prop__head h4.room-sub { font-family: var(--serif); font-size: 1.15rem; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--navy); display: grid; gap: 0.1rem; }
+.om-prop__head h4.room-sub .pm-in--label { font: inherit; }
+.om-prop__head h4.room-sub .pm-sub { font-family: var(--sans); font-size: 0.76rem; letter-spacing: 0.02em; text-transform: none; }
+.om-finding__res { grid-column: 1 / -1; }
+.pm-months > summary { list-style: none; cursor: pointer; }
+.pm-months > summary::-webkit-details-marker { display: none; }
+.pm-months > summary::before { content: "+ "; }
+.pm-months[open] > summary::before { content: "− "; }
+.login__sent.is-error { color: #9B3F2A; }
+.om-table--adj, .om-table--comp { min-width: 0; }
+.om-table--adj td select.pm-in { max-width: 11.5rem; text-overflow: ellipsis; }
+.om-adj__item { min-width: 14.5rem; }
+.om-adj__item .om-area { min-width: 13.5rem; }
+.om-comp__class { min-width: 14.5rem; }
+.om-comp__class .om-area { min-width: 12.5rem; }
+.om-table--comp .om-date { width: 8.2rem; font-size: 0.82rem; }
+.om-table--comp td .pm-in--num { min-width: 4.2rem; width: 4.6rem; }
+.om-table--comp thead th { white-space: normal; vertical-align: bottom; }
+.om-finding__body > label { align-content: start; }
+.om-comp__class select.pm-in { max-width: 14rem; text-overflow: ellipsis; }

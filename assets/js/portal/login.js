@@ -22,21 +22,33 @@ const go = (session) => location.replace(session.profile.role === "admin" ? "adm
     if (!form.checkValidity() || !email) { form.reportValidity(); return; }
     const button = form.querySelector("button");
     button.disabled = true;
+    let showCode = true;
+    sent.classList.remove("is-error");
     try {
       await store.sendMagicLink(email, "dashboard.html");
       sent.hidden = false;
-      sent.textContent = `Check your inbox. A secure sign-in link is on its way to ${email}.`;
+      sent.textContent = `Check your inbox. A secure sign-in link is on its way to ${email}. It can take a minute; check Junk if it isn't there.`;
     } catch (err) {
-      // Same message whether or not the address exists, so accounts can't be probed.
       sent.hidden = false;
-      sent.textContent = "If that address has a portal invitation, a sign-in link is on its way.";
-      console.warn(err.message);
+      console.warn(err.code || err.status, err.message);
+      if (err.code === "over_email_send_rate_limit" || err.status === 429) {
+        // One email per address per minute.
+        sent.textContent = "A sign-in email was sent to this address moments ago. Use the newest one, or wait a minute and ask again.";
+      } else if (err.code === "otp_disabled" || err.code === "user_not_found" || err.status === 422 || err.status === 400) {
+        // No account for that address: the same words as success, so addresses can't be probed.
+        sent.textContent = "If that address has a portal invitation, a sign-in link is on its way.";
+      } else {
+        // The account exists but the email could not be sent (mail service or network).
+        showCode = false;
+        sent.classList.add("is-error");
+        sent.innerHTML = 'We couldn\u2019t send the email just now. Try again in a few minutes, or write to <a href="mailto:michael@sypher.solutions">michael@sypher.solutions</a>.';
+      }
     } finally {
       button.disabled = false;
     }
     // The email also carries a code, for when a mail scanner has already used the link.
     sentTo = email;
-    codeForm.hidden = false;
+    codeForm.hidden = !showCode;
     codeError.hidden = true;
   });
 
