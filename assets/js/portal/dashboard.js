@@ -66,7 +66,9 @@ function personName(userId) {
   if (r.principals?.some((p) => p.user_id === userId)) return ADMIN_CONTACT.name;
   if (r.client?.user_id === userId) return r.client.name;
   const m = r.members?.find((x) => x.user_id === userId);
-  return m ? m.name : "Former team member";
+  if (m) return m.name;
+  // Not on the roster: before the roster lists principals, that is Michael; otherwise someone whose access ended.
+  return r.principals?.length ? "Someone no longer on the team" : ADMIN_CONTACT.name;
 }
 function personRole(userId) {
   const r = room.roster;
@@ -615,6 +617,9 @@ async function mountOwnerTab() {
   om = null;
   const r = room.roster || {};
   const people = [r.client && { id: r.client.user_id, name: `${r.client.name} (client)` }, ...(r.members || []).filter((m) => m.status === "active" && m.can_model).map((m) => ({ id: m.user_id, name: m.name }))].filter(Boolean);
+  // The model's own section bar sticks under the room tabs.
+  const tabsEl = document.querySelector(".room-tabs");
+  if (tabsEl) root.style.setProperty("--om-bar-top", `${(document.getElementById("p-header")?.offsetHeight || 74) + tabsEl.offsetHeight}px`);
   try {
     om = await mountOwner(root, { modelId: root.dataset.model, role: isMember() ? "viewer" : "owner", me: me(), nameOf: realName, people, projectHref: "#project" });
   } catch (err) { root.innerHTML = `<p class="p-empty">${esc(err.message)}</p>`; }

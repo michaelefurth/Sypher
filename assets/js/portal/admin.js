@@ -1,6 +1,8 @@
 // Admin console for the Managing Principal.
 // Routes (hash): #overview · #inquiries · #inquiry=<id> · #proposals · #proposal=<id>
-//                #clients · #engagement=<id> · #responses=<assignmentId> · #draft=<id> · #questionnaires
+//                #clients · #engagement=<id>/<tab> · #responses=<assignmentId> · #draft=<id> · #questionnaires
+// An engagement page has six tabs: today (messages, requests, activity), models, documents,
+// plan, people and settings; the next conversation and the milestones stay beside every tab.
 import { store, progressOf, FILE_ACCEPT, checkFile } from "./store.js";
 import { esc, paragraphs, $, $$, fmtDate, relTime, renderChrome, requireSession, toast, confirmDialog, promptDialog, statusPill, progressBar, download } from "./ui.js";
 import { SOV_TEMPLATES, sovTotals, sheetPill, money } from "./sov.js";
@@ -32,6 +34,10 @@ const activityLabel = (a) => {
 const fmtSize = (n) => (!n ? "" : n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 const MS_STATUS = [["upcoming", "Upcoming"], ["current", "In progress"], ["done", "Done"]];
 const KIND = { task: "To-do", document: "Document", answer: "Question", approval: "Approval", pricing: "Pricing" };
+const ENG_TABS = [["today", "Today"], ["models", "Models"], ["documents", "Documents"], ["plan", "Plan"], ["people", "People"], ["settings", "Settings"]];
+/** The engagement the page is on (from #engagement=<id>/<tab>), and its tab. */
+const engagementId = () => (location.hash.slice(1).match(/^engagement=([^/&]+)/) || [])[1] || null;
+const engTab = () => { const t = location.hash.slice(1).split("/")[1]; return ENG_TABS.some(([k]) => k === t) ? t : "today"; };
 const REQ_STATUS = { open: ["Open", "pill--teal"], submitted: ["To review", "pill--gold"], changes_requested: ["Changes requested", "pill--red"], accepted: ["Done", "pill--navy"] };
 
 function shell(active, counts, body) {
@@ -128,7 +134,7 @@ async function viewClients() {
     </div>`;
 }
 
-async function viewEngagement(id) {
+async function viewEngagement(id, tab = "today") {
   const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions, messages, actions, deliverables, roster, teamMessages, teamFiles] = await Promise.all([
     store.engagement(id), store.assignmentsFor(id), store.drafts(id), store.publications(id), store.questionnaires(), store.activity(id),
     store.milestones(id), store.decisions(id), store.messages(id), store.actionItems(id), store.deliverables(id),
@@ -148,227 +154,263 @@ async function viewEngagement(id) {
   const whoRole = (uid) => { const m = members.find((x) => x.user_id === uid); return m ? [m.role_label, m.organization].filter(Boolean).join(", ") : ""; };
   const assignee = (a) => (a.assignee_id ? who(a.assignee_id) : (eng.client?.full_name || "Client"));
   const accessText = (m) => m.status === "revoked" ? "Access removed" : m.status === "expired" ? `Ended ${fmtDate(m.expires_at, { month: "short", day: "numeric" })}` : m.expires_at ? `Until ${fmtDate(m.expires_at, { month: "short", day: "numeric", year: "numeric" })}` : "Until the engagement ends";
-  if (messages.some((m) => m.author_id !== session.user.id && !m.read_at)) store.markRead(id).catch(() => {});
+  if (tab === "today" && messages.some((m) => m.author_id !== session.user.id && !m.read_at)) store.markRead(id).catch(() => {});
   const clientName = (eng.client?.full_name || "").split(" ")[0] || "Client";
   const msName = new Map(milestones.map((m) => [m.id, m.title]));
   const localDT = (v) => { if (!v) return ""; const d = new Date(v); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
   const client = eng.client || {};
-  return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + `
-    <div class="draft-grid">
-      <div class="p-stack">
-        <section class="p-card p-card--accent" id="messages"><div class="p-row"><p class="p-kicker">Private messages</p><span class="p-muted">${messages.length ? `${messages.length} in the thread` : ""}</span></div>
-          ${messages.length ? `<ol class="thread admin-thread" id="thread">${messages.map((m) => {
-            const mine = m.author_id === session.user.id;
-            return `<li class="msg${mine ? " msg--mine" : ""}"><div class="msg__bubble"><p class="msg__who">${mine ? "You" : esc(clientName)}<time datetime="${esc(m.created_at)}">${esc(fmtDate(m.created_at, { month: "short", day: "numeric" }))} ${esc(new Date(m.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</time></p><div class="msg__body">${paragraphs(m.body)}</div>${mine ? `<p class="msg__who" style="margin:.4rem 0 0">${m.read_at ? "Read" : "Not read yet"}</p>` : ""}</div></li>`;
-          }).join("")}</ol>` : `<p class="p-muted">No messages yet. The client can write to you from their room; you're emailed when they do.</p>`}
-          <form class="p-form" id="msg-form"><label class="visually-hidden" for="msg-body">Reply to ${esc(clientName)}</label>
-            <textarea class="p-textarea" id="msg-body" name="body" rows="3" maxlength="8000" placeholder="Write to ${esc(clientName)}…" required></textarea>
-            <div class="p-row"><span class="p-muted">They're emailed a link to read it.</span><button class="btn btn--navy btn--sm" type="submit">Send</button></div>
-          </form>
-        </section>
-        <section class="p-card" id="team"><div class="p-row"><p class="p-kicker">Team</p><span class="p-muted">${activeMembers.length ? `${activeMembers.length} outside adviser${activeMembers.length > 1 ? "s" : ""}` : ""}</span></div>
-          ${members.length ? `<ul class="people">${members.map((m) => `<li class="person${m.status !== "active" ? " is-off" : ""}">
-            <span class="msg__avatar msg__avatar--initials" aria-hidden="true">${esc((m.name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase())}</span>
-            <div class="person__body"><p class="person__name">${esc(m.name)}</p><p class="person__role">${esc([m.role_label, m.organization, m.email].filter(Boolean).join(" · "))}</p>
-              <p class="person__access">${esc(accessText(m))} · ${[m.can_message && "messages", m.can_files && "files", m.can_model && "project model", "requests"].filter(Boolean).join(", ")}${m.last_seen_at ? ` · last in ${esc(relTime(m.last_seen_at))}` : m.status === "active" ? " · not signed in yet" : ""}</p></div>
-            <div class="btn-row" style="gap:.4rem 1rem;flex-direction:column;align-items:flex-end">
-              ${m.status === "active" && models.length && !sheets.some((x) => x.contractor_id === m.user_id) ? `<button class="p-linkbtn" data-member-model="${esc(m.id)}" data-allow="${m.can_model ? "0" : "1"}">${m.can_model ? "Remove model access" : "Give model access"}</button>` : ""}
-              ${m.status === "active" ? `<button class="p-linkbtn" data-member-extend="${esc(m.id)}">+30 days</button><button class="p-linkbtn p-linkbtn--danger" data-member-revoke="${esc(m.id)}">Remove</button>` : `<button class="p-linkbtn" data-member-restore="${esc(m.id)}">Restore 30 days</button>`}
-            </div></li>`).join("")}</ul>` : `<p class="p-muted">Nobody outside yet. The client can add their attorney, CPA or lender from their room, or you can add them here. Members see only the team thread, team files and their tasks.</p>`}
-          <details class="room-add"><summary class="p-linkbtn">Add someone</summary>
-            <form class="p-form p-form--2" id="member-form">
-              <div class="p-field"><label for="mb-name">Name</label><input class="p-input" id="mb-name" name="full_name" required></div>
-              <div class="p-field"><label for="mb-email">Email</label><input class="p-input" id="mb-email" name="email" type="email" required></div>
-              <div class="p-field"><label for="mb-role">Role</label><input class="p-input" id="mb-role" name="role_label" placeholder="Attorney, CPA, Lender…"></div>
-              <div class="p-field"><label for="mb-org">Firm</label><input class="p-input" id="mb-org" name="organization"></div>
-              <div class="p-field"><label for="mb-len">Access</label><select class="p-select" id="mb-len" name="length"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="">Until the engagement ends</option></select></div>
-              <div class="p-field room-add__perms" style="align-self:end"><label class="p-check"><input type="checkbox" name="can_message" checked> Messages</label><label class="p-check"><input type="checkbox" name="can_files" checked> Files</label></div>
-              <div class="p-span"><button class="btn btn--navy btn--sm" type="submit">Send invitation</button></div>
-            </form></details>
-          <h3 class="room-sub" style="margin-top:1.75rem">Team thread</h3>
-          ${teamMessages.length ? `<ol class="thread admin-thread" id="team-thread">${teamMessages.map((m) => {
-            const mine = m.author_id === session.user.id;
-            return `<li class="msg${mine ? " msg--mine" : ""}"><div class="msg__bubble"><p class="msg__who">${esc(who(m.author_id))}${!mine && whoRole(m.author_id) ? `<span class="msg__role">${esc(whoRole(m.author_id))}</span>` : ""}<time datetime="${esc(m.created_at)}">${esc(fmtDate(m.created_at, { month: "short", day: "numeric" }))} ${esc(new Date(m.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</time></p><div class="msg__body">${paragraphs(m.body)}</div></div></li>`;
-          }).join("")}</ol>` : `<p class="p-muted">${members.length ? "No team messages yet." : "Appears once someone is on the team."}</p>`}
-          ${members.length ? `<form class="p-form" id="team-msg-form"><label class="visually-hidden" for="team-msg-body">Write to the team</label>
-            <textarea class="p-textarea" id="team-msg-body" name="body" rows="2" maxlength="8000" placeholder="Write to the whole team…" required></textarea>
-            <div class="p-row"><span class="p-muted">Everyone on the team who can message is emailed a link.</span><button class="btn btn--ghost btn--sm" type="submit">Send to team</button></div></form>` : ""}
-          ${teamFiles.length ? `<h3 class="room-sub" style="margin-top:1.75rem">Team files</h3><ul class="doc-list">${teamFiles.map((f) => `<li class="doc">
-            <span class="doc__icon doc__icon--mine" aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
-            <div class="doc__body"><p class="doc__title">${esc(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}<p class="doc__meta">${esc(who(f.uploaded_by))} · ${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
-            <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(f.path)}">Open</button><button class="p-linkbtn" data-team-file-delete="${esc(f.id)}">Remove</button></div></li>`).join("")}</ul>` : ""}
-        </section>
-        <section class="p-card" id="requests"><div class="p-row"><p class="p-kicker">Requests</p><span class="p-muted">${actions.filter((a) => a.status === "submitted").length ? `${actions.filter((a) => a.status === "submitted").length} to review` : ""}</span></div>
-          ${actions.length ? `<ul class="req-list req-list--admin">${actions.map((a) => {
-            const files = requestFiles.filter((f) => f.request_id === a.id);
-            const [sl, sc] = REQ_STATUS[a.status] || [a.status, ""];
-            return `<li class="req req--${esc(a.kind)} is-${esc(a.status)}">
-              <div class="req__head"><span class="req__kind">${esc(KIND[a.kind] || a.kind)}</span><h3 class="req__title">${esc(a.title)}</h3><span class="pill pill--dot ${sc}">${esc(sl)}</span></div>
-              <p class="req__meta"><span>${esc(a.created_by ? who(a.created_by) : "You")} → ${esc(assignee(a))}</span>${a.due_date && a.status !== "accepted" ? `<span>Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}</span>` : ""}${a.submitted_at ? `<span>Answered ${esc(relTime(a.submitted_at))}</span>` : ""}</p>
-              ${a.detail ? `<p class="req__detail">${esc(a.detail)}</p>` : ""}
-              ${a.response ? `<div class="req__answer"><b>${esc(a.submitted_by ? who(a.submitted_by) : "Answer")}</b>${paragraphs(a.response)}</div>` : ""}
-              ${a.review_note ? `<p class="req__meta">Review note: ${esc(a.review_note)}</p>` : ""}
-              ${files.length ? `<ul class="req__files">${files.map((f) => `<li><button type="button" class="req__file" data-open-file="${esc(f.path)}"><span aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>${esc(f.name)} <small>${esc(who(f.uploaded_by))}</small></button></li>`).join("")}</ul>` : ""}
-              <div class="req__actions">
-                ${a.status === "submitted" && a.kind !== "pricing" ? `<button class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button><button class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>` : ""}
-                ${a.kind === "pricing" && a.link_ref ? `<a class="p-linkbtn" href="pricing.html?s=${esc(a.link_ref)}">Open the sheet</a>` : ""}
-                ${a.link_kind === "pm_input" && models.length ? `<a class="p-linkbtn" href="project.html?m=${esc(models[0].id)}">Open the model</a>` : ""}
-                ${["om_input", "om_finding"].includes(a.link_kind) && owners.length ? `<a class="p-linkbtn" href="owner.html?m=${esc(owners[0].id)}">Open the owner model</a>` : ""}
-                ${a.status !== "accepted" && a.kind !== "pricing" && !["pm_input", "om_input"].includes(a.link_kind) ? `<button class="p-linkbtn" data-req-answer="${esc(a.id)}">Answer for them</button>` : ""}
-                <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`;
-          }).join("")}</ul>` : `<p class="p-muted">Ask the client or anyone on the team for a document, an answer, an approval or a to-do. They answer in the portal with a note and files, and you accept it or send it back. Anyone on the engagement can ask you, too.</p>`}
-          <form class="p-form p-form--2" id="action-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
-            <div class="p-field"><label for="ac-kind">Kind</label><select class="p-select" id="ac-kind" name="kind"><option value="document">Document or file</option><option value="answer">Answer to a question</option><option value="approval">Approval</option><option value="task">To-do</option></select></div>
-            <div class="p-field"><label for="ac-who">From</label><select class="p-select" id="ac-who" name="assignee_id"><option value="">${esc(eng.client?.full_name || "The client")} (client)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
-            <div class="p-field p-span"><label for="ac-title">What's needed</label><input class="p-input" id="ac-title" name="title" required placeholder="e.g. Send the last 12 months of bank statements"></div>
-            <div class="p-field"><label for="ac-detail">Detail (optional)</label><input class="p-input" id="ac-detail" name="detail"></div>
-            <div class="p-field"><label for="ac-due">Due</label><input class="p-input" id="ac-due" name="due_date" type="date"></div>
-            <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email them</label><button class="btn btn--ghost btn--sm" type="submit">Send request</button></div>
-          </form>
-        </section>
-        <section class="p-card p-card--navy" id="project"><p class="p-kicker">Project model</p>
-          ${models.length ? `<ul class="pm-adminlist">${models.map((m, i) => { const r = summaries[i]?.result; const open = summaries[i]?.inputs.filter((x) => x.status !== "confirmed").length ?? 0; return `<li>
-            <div class="p-row"><a class="link-on-dark" href="project.html?m=${esc(m.id)}"><b>${esc(m.title)}</b></a>${r ? `<span>${money(r.total)}</span>` : ""}</div>
-            ${r ? `<p class="pm-adminlist__figs">Loan ${money(r.loan)} · equity ${money(r.equity)} · coverage yr 2 ${r.years[1].dscr == null ? "—" : `${r.years[1].dscr.toFixed(2)}×`} · ${open} open assumption${open === 1 ? "" : "s"}</p>` : ""}
-            <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--gold btn--sm" href="project.html?m=${esc(m.id)}">Open the model</a><button class="p-linkbtn" data-model-delete="${esc(m.id)}" style="color:var(--champagne)">Delete</button></div></li>`; }).join("")}</ul>`
-            : `<p style="color:var(--on-dark-muted)">One place for the whole project: land, the contractor's pricing (linked live), contingency, soft and opening costs, the loan, equity, monthly draws, interest during construction, and coverage after opening. Advisers you give access to can confirm figures and comment.</p>`}
-          <details class="room-add"${models.length ? "" : " open"}><summary class="p-linkbtn" style="color:var(--champagne)">New project model</summary>
-            <form class="p-form p-form--2" id="model-form">
-              <div class="p-field p-span"><label for="pm-title" style="color:var(--on-dark-muted)">Title</label><input class="p-input" id="pm-title" name="title" required placeholder="e.g. Phase 1 restaurant: total cost and financing"></div>
-              <div class="p-field"><label for="pm-sheet" style="color:var(--on-dark-muted)">Hard costs from</label><select class="p-select" id="pm-sheet" name="sheet"><option value="">No pricing sheet</option>${sheets.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</select></div>
-              <div class="p-field"><label for="pm-sf" style="color:var(--on-dark-muted)">Building area (SF)</label><input class="p-input" id="pm-sf" name="sf" inputmode="decimal"></div>
-              <div class="p-span"><button class="btn btn--gold btn--sm" type="submit">Create the model</button></div>
-            </form></details>
-        </section>
-        <section class="p-card p-card--navy" id="owner"><p class="p-kicker">Owner model</p>
-          ${owners.length ? `<ul class="pm-adminlist">${owners.map((m, i) => { const r = ownerSums[i]?.result; const open = ownerSums[i]?.inputs.filter((x) => x.status !== "confirmed").length ?? 0; return `<li>
-            <div class="p-row"><a class="link-on-dark" href="owner.html?m=${esc(m.id)}"><b>${esc(m.title)}</b></a>${r?.global.cfads != null ? `<span>${money(r.global.cfads)} recurring</span>` : ""}</div>
-            ${r ? `<p class="pm-adminlist__figs">Coverage ${r.global.dscr == null ? "—" : `${r.global.dscr.toFixed(2)}×`}${r.global.withProject ? ` · with the project ${r.global.withProject.dscr.toFixed(2)}×` : ""} · cost segregation ${money(r.seg.extra)} year 1 (${money(r.seg.taxSaved)} tax) · ${r.findings.open} open finding${r.findings.open === 1 ? "" : "s"} · ${open} open assumption${open === 1 ? "" : "s"}</p>` : ""}
-            <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--gold btn--sm" href="owner.html?m=${esc(m.id)}">Open the owner model</a><button class="p-linkbtn" data-owner-delete="${esc(m.id)}" style="color:var(--champagne)">Delete</button></div></li>`; }).join("")}</ul>`
-            : `<p style="color:var(--on-dark-muted)">The owner's businesses, properties and taxes in one place: the books by year beside the filed returns, the adjustments that normalize cash flow and explain the book-to-tax gap, each property's depreciation as filed and with a cost segregation study, the owner's tax estimate, global coverage of existing and new debt, and a findings register with who resolves what. The same people see it as the project model.</p>`}
-          <details class="room-add"${owners.length ? "" : " open"}><summary class="p-linkbtn" style="color:var(--champagne)">New owner model</summary>
-            <form class="p-form p-form--2" id="owner-form">
-              <div class="p-field p-span"><label for="om-title" style="color:var(--on-dark-muted)">Title</label><input class="p-input" id="om-title" name="title" required placeholder="e.g. Books, taxes and properties: 2024 to 2026"></div>
-              <div class="p-field"><label for="om-owner" style="color:var(--on-dark-muted)">Owner's name</label><input class="p-input" id="om-owner" name="owner_name" value="${esc(eng.client?.full_name || "")}"></div>
-              <div class="p-field"><label for="om-pm" style="color:var(--on-dark-muted)">Project model for coverage</label><select class="p-select" id="om-pm" name="pm_model_id"><option value="">None</option>${models.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</select></div>
-              <div class="p-field p-span"><label for="om-entities" style="color:var(--on-dark-muted)">Entities (one per line, as “Name | kind”: smllc, sole_prop, partnership, s_corp, c_corp, rental)</label><textarea class="p-textarea" id="om-entities" name="entities" rows="3" placeholder="${esc(eng.client?.company || "The business")} | smllc"></textarea></div>
-              <div class="p-span"><button class="btn btn--gold btn--sm" type="submit">Create the owner model</button> <span style="color:var(--on-dark-muted)">It starts with the standard assumptions and the fifteen standard forensic findings.</span></div>
-            </form></details>
-        </section>
-        <section class="p-card p-card--accent" id="pricing"><p class="p-kicker">Pricing (schedule of values)</p>
-          ${sheets.length ? `<ul class="price-list">${sheets.map((x, i) => {
-            const t = sovTotals(x, sheetLines[i], budget);
-            return `<li><div class="p-row"><a class="price-list__title" href="pricing.html?s=${esc(x.id)}">${esc(x.title)}</a>${sheetPill(x.status)}</div>
-              <p class="p-muted">${x.contractor_id ? esc(who(x.contractor_id)) : "No contractor"} · ${t.answered} of ${t.count} lines · ${money(t.total)}${t.budget ? ` · budget ${money(t.budget.base)}${t.budget.pricedBudget ? ` (priced lines <span class="${t.budget.variance > 0 ? "is-over" : "is-under"}">${t.budget.variance > 0 ? "+" : "−"}${money(Math.abs(t.budget.variance))}</span>)` : ""}` : ""}${x.version ? ` · v${x.version}` : ""}</p>
-              <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--ghost btn--sm" href="pricing.html?s=${esc(x.id)}">Open the sheet</a><button class="p-linkbtn p-linkbtn--danger" data-sheet-delete="${esc(x.id)}">Delete</button></div></li>`;
-          }).join("")}</ul>` : `<p class="p-muted">A schedule of values the contractor prices line by line, with autosave. You and the client see each line beside the budget; the contractor never sees the budget.</p>`}
-          <details class="room-add"${sheets.length ? "" : " open"}><summary class="p-linkbtn">New pricing sheet</summary>
-            <form class="p-form p-form--2" id="sheet-form">
-              <div class="p-field p-span"><label for="sh-title">Title</label><input class="p-input" id="sh-title" name="title" required placeholder="e.g. Building and site: contractor pricing"></div>
-              <div class="p-field"><label for="sh-who">Contractor</label><select class="p-select" id="sh-who" name="contractor_id"><option value="">None yet (I'll key it in)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
-              <div class="p-field"><label for="sh-due">Due</label><input class="p-input" id="sh-due" name="due_date" type="date"></div>
-              <div class="p-field p-span"><label for="sh-tpl">Start from</label><select class="p-select" id="sh-tpl" name="template">${Object.entries(SOV_TEMPLATES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select></div>
-              <div class="p-field p-span"><label for="sh-intro">What you need (shown at the top of the sheet)</label><textarea class="p-textarea" id="sh-intro" name="intro" rows="3" placeholder="The drawings and revision to price from, what to include, when you need it"></textarea></div>
-              <div class="p-span p-row"><span class="p-muted">Add the contractor to the team first (Team, above). They're asked and emailed when the sheet is created.</span><button class="btn btn--navy btn--sm" type="submit">Create the sheet</button></div>
-            </form></details>
-        </section>
-        <section class="p-card"><p class="p-kicker">Deliverables</p>
-          ${deliverables.length ? `<ul class="doc-list">${deliverables.map((d) => `<li class="doc">
-            <span class="doc__icon" aria-hidden="true">${esc((d.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
-            <div class="doc__body"><p class="doc__title">${esc(d.title)}${d.shared_with_team ? ` <span class="pill pill--teal">Team can see</span>` : ""}</p>${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
-              <p class="doc__meta">${d.milestone_id && msName.has(d.milestone_id) ? `${esc(msName.get(d.milestone_id))} · ` : ""}${esc(fmtDate(d.created_at, { month: "short", day: "numeric" }))}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}</p></div>
-            <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(d.path)}">Open</button>${members.length ? `<button class="p-linkbtn" data-deliverable-share="${esc(d.id)}" data-share="${d.shared_with_team ? "0" : "1"}">${d.shared_with_team ? "Unshare" : "Share with team"}</button>` : ""}<button class="p-linkbtn" data-deliverable-delete="${esc(d.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">Reports, models and documents you share appear in the client's Documents tab, filed by milestone.</p>`}
-          <form class="p-form p-form--2" id="deliverable-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
-            <div class="p-field p-span"><label for="dl-file">File (PDF, Office, CSV, text or image; up to 50 MB)</label><input class="p-input" id="dl-file" name="file" type="file" accept="${FILE_ACCEPT}" required></div>
-            <div class="p-field"><label for="dl-title">Title</label><input class="p-input" id="dl-title" name="title" placeholder="e.g. Cash-flow model, v2"></div>
-            <div class="p-field"><label for="dl-ms">Milestone</label><select class="p-select" id="dl-ms" name="milestone_id"><option value="">General</option>${milestones.map((m) => `<option value="${esc(m.id)}"${m.status === "current" ? " selected" : ""}>${esc(m.title)}</option>`).join("")}</select></div>
-            <div class="p-field p-span"><label for="dl-note">Note for the client (optional)</label><input class="p-input" id="dl-note" name="note" placeholder="What it is and what to look at first"></div>
-            <div class="p-span p-row"><span class="room-add__perms"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email the client</label>${members.length ? `<label class="p-check p-check--inline"><input type="checkbox" name="team"> Team can see it too</label>` : ""}</span><button class="btn btn--navy btn--sm" type="submit">Share with client</button></div>
-          </form>
-        </section>
-        <section class="p-card"><p class="p-kicker">Questionnaires</p>
-          ${assignments.length ? `<div class="p-table-wrap" tabindex="0" role="region" aria-label="Table"><table class="p-table"><thead><tr><th>Questionnaire</th><th>Progress</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-          ${assignments.map((a) => `<tr><td><strong>${esc(a.questionnaire?.title)}</strong><br><span class="p-muted">${a.due_date ? `Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}` : "No due date"}</span></td>
-            <td style="min-width:140px">${progressBar(a.progress)}<span class="p-muted">${a.progress.answered + a.progress.unknown}/${a.progress.total}</span></td>
-            <td>${statusPill(a.status)}</td>
-            <td><div class="btn-row" style="gap:.5rem 1rem">
-              <a class="p-linkbtn" href="#responses=${esc(a.id)}">Answers</a>
-              ${a.status === "submitted" || a.status === "complete" ? `<button class="p-linkbtn" data-reopen="${esc(a.id)}">Reopen</button>` : ""}
-              ${a.status === "submitted" ? `<button class="p-linkbtn" data-complete="${esc(a.id)}">Mark complete</button>` : ""}
-              <button class="p-linkbtn" data-regen="${esc(a.id)}">AI draft</button>
-            </div></td></tr>`).join("")}
-          </tbody></table></div>` : `<p class="p-empty">No questionnaires assigned yet.</p>`}
-          <form class="p-form p-form--2" id="assign-form" style="margin-top:1.75rem;padding-top:1.5rem;border-top:1px solid var(--rule)">
-            <div class="p-field p-span"><label for="a-q">Assign a questionnaire</label>
-              <select class="p-select" id="a-q" name="questionnaire" required>${questionnaires.map((q) => `<option value="${esc(q.id)}">${esc(q.title)} (${q.count} questions)</option>`).join("")}</select></div>
-            <div class="p-field"><label for="a-due">Due date</label><input class="p-input" id="a-due" name="due" type="date"></div>
-            <div class="p-field p-span"><label for="a-msg">Note to the client</label><textarea class="p-textarea" id="a-msg" name="message" rows="2" placeholder="Shown at the top of the questionnaire"></textarea></div>
-            <div class="p-span"><button class="btn btn--navy btn--sm" type="submit" ${questionnaires.length ? "" : "disabled"}>Assign</button></div>
-          </form>
-        </section>
-        <section class="p-card"><p class="p-kicker">AI drafts</p>
-          ${drafts.length ? `<ul class="p-list">${drafts.map((d) => `<li class="p-row"><div>${statusPill(d.status)} <span class="p-muted">${esc(relTime(d.created_at))}</span>${d.error ? `<p class="p-muted">${esc(d.error)}</p>` : ""}</div>${d.status === "awaiting_review" || d.status === "published" || d.status === "dismissed" ? `<a class="p-linkbtn" href="#draft=${esc(d.id)}">Open</a>` : ""}</li>`).join("")}</ul>` : `<p class="p-muted">A draft is generated automatically when the client submits a questionnaire.</p>`}
-        </section>
-        <section class="p-card"><p class="p-kicker">Published updates</p>
-          ${pubs.length ? `<ul class="p-list">${pubs.map((p) => `<li><div class="p-row"><h2 class="p-item">${esc(p.title)}</h2><span class="p-muted">${esc(fmtDate(p.published_at))}</span></div></li>`).join("")}</ul>` : `<p class="p-muted">Nothing published yet.</p>`}
-          <details style="margin-top:1rem"><summary class="p-linkbtn">Write an update by hand</summary>
-            <form class="p-form" id="manual-pub" style="margin-top:1rem">
-              <div class="p-field"><label for="m-title">Title</label><input class="p-input" id="m-title" name="title" required></div>
-              <div class="p-field"><label for="m-body">Message</label><textarea class="p-textarea" id="m-body" name="body" rows="6" required></textarea></div>
-              <button class="btn btn--navy btn--sm" type="submit">Publish to client</button>
-            </form></details>
-        </section>
+  const unreadMsgs = messages.filter((m) => m.author_id !== session.user.id && !m.read_at).length;
+  const toReview = actions.filter((a) => a.status === "submitted").length;
+  const draftsToReview = drafts.filter((d) => d.status === "awaiting_review").length;
+  const thread = (list, domId, nameFor) => `<ol class="thread admin-thread" id="${domId}">${list.map((m) => {
+    const mine = m.author_id === session.user.id;
+    return `<li class="msg${mine ? " msg--mine" : ""}"><div class="msg__bubble"><p class="msg__who">${mine ? "You" : esc(nameFor(m.author_id))}${!mine && whoRole(m.author_id) ? `<span class="msg__role">${esc(whoRole(m.author_id))}</span>` : ""}<time datetime="${esc(m.created_at)}">${esc(fmtDate(m.created_at, { month: "short", day: "numeric" }))} ${esc(new Date(m.created_at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}</time></p><div class="msg__body">${paragraphs(m.body)}</div>${mine && domId === "thread" ? `<p class="msg__who" style="margin:.4rem 0 0">${m.read_at ? "Read" : "Not read yet"}</p>` : ""}</div></li>`;
+  }).join("")}</ol>`;
+  const disclosure = (label, inner, open = false) => `<details class="room-add"${open ? " open" : ""}><summary class="p-linkbtn">${label}</summary>${inner}</details>`;
+  const docRow = (d) => `<li class="doc">
+    <span class="doc__icon" aria-hidden="true">${esc((d.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
+    <div class="doc__body"><p class="doc__title">${esc(d.title)}${d.shared_with_team ? ` <span class="pill pill--teal">Team can see</span>` : ""}</p>${d.note ? `<p class="doc__note">${esc(d.note)}</p>` : ""}
+      <p class="doc__meta">${d.milestone_id && msName.has(d.milestone_id) ? `${esc(msName.get(d.milestone_id))} · ` : ""}${esc(fmtDate(d.created_at, { month: "short", day: "numeric" }))}${d.size ? ` · ${esc(fmtSize(d.size))}` : ""}</p></div>
+    <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(d.path)}">Open</button>${members.length ? `<button class="p-linkbtn" data-deliverable-share="${esc(d.id)}" data-share="${d.shared_with_team ? "0" : "1"}">${d.shared_with_team ? "Unshare" : "Share with team"}</button>` : ""}<button class="p-linkbtn" data-deliverable-delete="${esc(d.id)}">Remove</button></div></li>`;
+
+  /* ------------------------------------------------------------ the cards */
+  const cards = {
+    messages: () => `<section class="p-card p-card--accent" id="messages"><div class="p-row"><p class="p-kicker">Private messages</p><span class="p-muted">${messages.length ? `${messages.length} in the thread` : ""}</span></div>
+      ${messages.length ? thread(messages, "thread", () => clientName) : `<p class="p-muted">No messages yet. The client can write to you from their room; you're emailed when they do.</p>`}
+      <form class="p-form" id="msg-form"><label class="visually-hidden" for="msg-body">Reply to ${esc(clientName)}</label>
+        <textarea class="p-textarea" id="msg-body" name="body" rows="3" maxlength="8000" placeholder="Write to ${esc(clientName)}…" required></textarea>
+        <div class="p-row"><span class="p-muted">They're emailed a link to read it.</span><button class="btn btn--navy btn--sm" type="submit">Send</button></div>
+      </form>
+    </section>`,
+    requests: () => `<section class="p-card" id="requests"><div class="p-row"><p class="p-kicker">Requests</p><span class="p-muted">${toReview ? `${toReview} to review` : actions.length ? `${actions.filter((a) => a.status !== "accepted").length} open` : ""}</span></div>
+      ${actions.length ? `<ul class="req-list req-list--admin">${actions.map((a) => {
+        const files = requestFiles.filter((f) => f.request_id === a.id);
+        const [sl, sc] = REQ_STATUS[a.status] || [a.status, ""];
+        return `<li class="req req--${esc(a.kind)} is-${esc(a.status)}">
+          <div class="req__head"><span class="req__kind">${esc(KIND[a.kind] || a.kind)}</span><h3 class="req__title">${esc(a.title)}</h3><span class="pill pill--dot ${sc}">${esc(sl)}</span></div>
+          <p class="req__meta"><span>${esc(a.created_by ? who(a.created_by) : "You")} → ${esc(assignee(a))}</span>${a.due_date && a.status !== "accepted" ? `<span>Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}</span>` : ""}${a.submitted_at ? `<span>Answered ${esc(relTime(a.submitted_at))}</span>` : ""}</p>
+          ${a.detail ? `<p class="req__detail">${esc(a.detail)}</p>` : ""}
+          ${a.response ? `<div class="req__answer"><b>${esc(a.submitted_by ? who(a.submitted_by) : "Answer")}</b>${paragraphs(a.response)}</div>` : ""}
+          ${a.review_note ? `<p class="req__meta">Review note: ${esc(a.review_note)}</p>` : ""}
+          ${files.length ? `<ul class="req__files">${files.map((f) => `<li><button type="button" class="req__file" data-open-file="${esc(f.path)}"><span aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>${esc(f.name)} <small>${esc(who(f.uploaded_by))}</small></button></li>`).join("")}</ul>` : ""}
+          <div class="req__actions">
+            ${a.status === "submitted" && a.kind !== "pricing" ? `<button class="btn btn--ghost btn--sm" data-req-review="changes" data-req="${esc(a.id)}">Ask for changes</button><button class="btn btn--navy btn--sm" data-req-review="accept" data-req="${esc(a.id)}">Accept</button>` : ""}
+            ${a.kind === "pricing" && a.link_ref ? `<a class="p-linkbtn" href="pricing.html?s=${esc(a.link_ref)}">Open the sheet</a>` : ""}
+            ${a.link_kind === "pm_input" && models.length ? `<a class="p-linkbtn" href="project.html?m=${esc(models[0].id)}">Open the model</a>` : ""}
+            ${["om_input", "om_finding"].includes(a.link_kind) && owners.length ? `<a class="p-linkbtn" href="owner.html?m=${esc(owners[0].id)}">Open the owner model</a>` : ""}
+            ${a.status !== "accepted" && a.kind !== "pricing" && !["pm_input", "om_input"].includes(a.link_kind) ? `<button class="p-linkbtn" data-req-answer="${esc(a.id)}">Answer for them</button>` : ""}
+            <button class="p-linkbtn" data-action-delete="${esc(a.id)}">Remove</button></div></li>`;
+      }).join("")}</ul>` : `<p class="p-muted">Ask the client or anyone on the team for a document, an answer, an approval or a to-do. They answer in the portal with a note and files, and you accept it or send it back. Anyone on the engagement can ask you, too.</p>`}
+      ${disclosure("Ask for something", `<form class="p-form p-form--2" id="action-form">
+        <div class="p-field"><label for="ac-kind">Kind</label><select class="p-select" id="ac-kind" name="kind"><option value="document">Document or file</option><option value="answer">Answer to a question</option><option value="approval">Approval</option><option value="task">To-do</option></select></div>
+        <div class="p-field"><label for="ac-who">From</label><select class="p-select" id="ac-who" name="assignee_id"><option value="">${esc(eng.client?.full_name || "The client")} (client)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
+        <div class="p-field p-span"><label for="ac-title">What's needed</label><input class="p-input" id="ac-title" name="title" required placeholder="e.g. Send the last 12 months of bank statements"></div>
+        <div class="p-field"><label for="ac-detail">Detail (optional)</label><input class="p-input" id="ac-detail" name="detail"></div>
+        <div class="p-field"><label for="ac-due">Due</label><input class="p-input" id="ac-due" name="due_date" type="date"></div>
+        <div class="p-span p-row"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email them</label><button class="btn btn--ghost btn--sm" type="submit">Send request</button></div>
+      </form>`)}
+    </section>`,
+    activity: (limit = 8) => `<section class="p-card"><div class="p-row"><p class="p-kicker">Activity</p>${activity.length > limit ? `<a class="p-linkbtn" href="#engagement=${esc(id)}/plan">All activity</a>` : ""}</div>
+      ${activity.length ? `<ul class="p-list">${activity.slice(0, limit).map((a) => `<li><strong>${esc(activityLabel(a))}</strong><p class="p-muted">${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
+    </section>`,
+    project: () => `<section class="p-card p-card--navy" id="project"><p class="p-kicker">Project model</p>
+      ${models.length ? `<ul class="pm-adminlist">${models.map((m, i) => { const r = summaries[i]?.result; const open = summaries[i]?.inputs.filter((x) => x.status !== "confirmed").length ?? 0; return `<li>
+        <div class="p-row"><a class="link-on-dark" href="project.html?m=${esc(m.id)}"><b>${esc(m.title)}</b></a>${r ? `<span>${money(r.total)}</span>` : ""}</div>
+        ${r ? `<p class="pm-adminlist__figs">Loan ${money(r.loan)} · equity ${money(r.equity)} · coverage yr 2 ${r.years[1].dscr == null ? "—" : `${r.years[1].dscr.toFixed(2)}×`} · ${open} open assumption${open === 1 ? "" : "s"}</p>` : ""}
+        <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--gold btn--sm" href="project.html?m=${esc(m.id)}">Open the model</a></div></li>`; }).join("")}</ul>`
+        : `<p style="color:var(--on-dark-muted)">One place for the whole project: land, the contractor's pricing (linked live), contingency, soft and opening costs, the loan, equity, monthly draws, interest during construction, and coverage after opening. Advisers you give access to can confirm figures and comment.</p>`}
+      <details class="room-add"><summary class="p-linkbtn" style="color:var(--champagne)">New project model</summary>
+        <form class="p-form p-form--2" id="model-form">
+          <div class="p-field p-span"><label for="pm-title" style="color:var(--on-dark-muted)">Title</label><input class="p-input" id="pm-title" name="title" required placeholder="e.g. Phase 1 restaurant: total cost and financing"></div>
+          <div class="p-field"><label for="pm-sheet" style="color:var(--on-dark-muted)">Hard costs from</label><select class="p-select" id="pm-sheet" name="sheet"><option value="">No pricing sheet</option>${sheets.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</select></div>
+          <div class="p-field"><label for="pm-sf" style="color:var(--on-dark-muted)">Building area (SF)</label><input class="p-input" id="pm-sf" name="sf" inputmode="decimal"></div>
+          <div class="p-span"><button class="btn btn--gold btn--sm" type="submit">Create the model</button></div>
+        </form></details>
+    </section>`,
+    owner: () => `<section class="p-card p-card--navy" id="owner"><p class="p-kicker">Owner model</p>
+      ${owners.length ? `<ul class="pm-adminlist">${owners.map((m, i) => { const r = ownerSums[i]?.result; const open = ownerSums[i]?.inputs.filter((x) => x.status !== "confirmed").length ?? 0; return `<li>
+        <div class="p-row"><a class="link-on-dark" href="owner.html?m=${esc(m.id)}"><b>${esc(m.title)}</b></a>${r?.global.cfads != null ? `<span>${money(r.global.cfads)} recurring</span>` : ""}</div>
+        ${r ? `<p class="pm-adminlist__figs">Coverage ${r.global.dscr == null ? "—" : `${r.global.dscr.toFixed(2)}×`}${r.global.withProject ? ` · with the project ${r.global.withProject.dscr.toFixed(2)}×` : ""} · cost segregation ${money(r.seg.usable)} usable (${money(r.seg.taxSaved)} tax) · ${r.findings.open} open finding${r.findings.open === 1 ? "" : "s"} · ${open} open assumption${open === 1 ? "" : "s"}</p>` : ""}
+        <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--gold btn--sm" href="owner.html?m=${esc(m.id)}">Open the owner model</a></div></li>`; }).join("")}</ul>`
+        : `<p style="color:var(--on-dark-muted)">The owner's businesses, properties and taxes in one place: the books by year beside the filed returns, the adjustments that normalize cash flow and explain the book-to-tax gap, each property's depreciation as filed and with a cost segregation study, the owner's tax estimate, global coverage of existing and new debt, and a findings register with who resolves what. The same people see it as the project model.</p>`}
+      <details class="room-add"><summary class="p-linkbtn" style="color:var(--champagne)">New owner model</summary>
+        <form class="p-form p-form--2" id="owner-form">
+          <div class="p-field p-span"><label for="om-title" style="color:var(--on-dark-muted)">Title</label><input class="p-input" id="om-title" name="title" required placeholder="e.g. Books, taxes and properties: 2024 to 2026"></div>
+          <div class="p-field"><label for="om-owner" style="color:var(--on-dark-muted)">Owner's name</label><input class="p-input" id="om-owner" name="owner_name" value="${esc(eng.client?.full_name || "")}"></div>
+          <div class="p-field"><label for="om-pm" style="color:var(--on-dark-muted)">Project model for coverage</label><select class="p-select" id="om-pm" name="pm_model_id"><option value="">None</option>${models.map((x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`).join("")}</select></div>
+          <div class="p-field p-span"><label for="om-entities" style="color:var(--on-dark-muted)">Entities (one per line, as “Name | kind”: smllc, sole_prop, partnership, s_corp, c_corp, rental)</label><textarea class="p-textarea" id="om-entities" name="entities" rows="3" placeholder="${esc(eng.client?.company || "The business")} | smllc"></textarea></div>
+          <div class="p-span"><button class="btn btn--gold btn--sm" type="submit">Create the owner model</button> <span style="color:var(--on-dark-muted)">It starts with the standard assumptions and the fifteen standard forensic findings.</span></div>
+        </form></details>
+    </section>`,
+    pricing: () => `<section class="p-card p-card--accent" id="pricing"><p class="p-kicker">Pricing (schedule of values)</p>
+      ${sheets.length ? `<ul class="price-list">${sheets.map((x, i) => {
+        const t = sovTotals(x, sheetLines[i], budget);
+        return `<li><div class="p-row"><a class="price-list__title" href="pricing.html?s=${esc(x.id)}">${esc(x.title)}</a>${sheetPill(x.status)}</div>
+          <p class="p-muted">${x.contractor_id ? esc(who(x.contractor_id)) : "No contractor"} · ${t.answered} of ${t.count} lines · ${money(t.total)}${t.budget ? ` · budget ${money(t.budget.base)}${t.budget.pricedBudget ? ` (priced lines <span class="${t.budget.variance > 0 ? "is-over" : "is-under"}">${t.budget.variance > 0 ? "+" : "−"}${money(Math.abs(t.budget.variance))}</span>)` : ""}` : ""}${x.version ? ` · v${x.version}` : ""}</p>
+          <div class="btn-row" style="gap:.5rem 1rem"><a class="btn btn--ghost btn--sm" href="pricing.html?s=${esc(x.id)}">Open the sheet</a></div></li>`;
+      }).join("")}</ul>` : `<p class="p-muted">A schedule of values the contractor prices line by line, with autosave. You and the client see each line beside the budget; the contractor never sees the budget.</p>`}
+      <details class="room-add"><summary class="p-linkbtn">New pricing sheet</summary>
+        <form class="p-form p-form--2" id="sheet-form">
+          <div class="p-field p-span"><label for="sh-title">Title</label><input class="p-input" id="sh-title" name="title" required placeholder="e.g. Building and site: contractor pricing"></div>
+          <div class="p-field"><label for="sh-who">Contractor</label><select class="p-select" id="sh-who" name="contractor_id"><option value="">None yet (I'll key it in)</option>${activeMembers.map((m) => `<option value="${esc(m.user_id)}">${esc(m.name)}${m.role_label ? ` (${esc(m.role_label)})` : ""}</option>`).join("")}</select></div>
+          <div class="p-field"><label for="sh-due">Due</label><input class="p-input" id="sh-due" name="due_date" type="date"></div>
+          <div class="p-field p-span"><label for="sh-tpl">Start from</label><select class="p-select" id="sh-tpl" name="template">${Object.entries(SOV_TEMPLATES).map(([k, v]) => `<option value="${k}">${esc(v.label)}</option>`).join("")}</select></div>
+          <div class="p-field p-span"><label for="sh-intro">What you need (shown at the top of the sheet)</label><textarea class="p-textarea" id="sh-intro" name="intro" rows="3" placeholder="The drawings and revision to price from, what to include, when you need it"></textarea></div>
+          <div class="p-span p-row"><span class="p-muted">Add the contractor to the team first (People). They're asked and emailed when the sheet is created.</span><button class="btn btn--navy btn--sm" type="submit">Create the sheet</button></div>
+        </form></details>
+    </section>`,
+    deliverables: () => `<section class="p-card"><div class="p-row"><p class="p-kicker">Deliverables</p><span class="p-muted">${deliverables.length ? `${deliverables.length} shared` : ""}</span></div>
+      ${deliverables.length ? `<ul class="doc-list">${deliverables.map(docRow).join("")}</ul>` : `<p class="p-muted">Reports, models and documents you share appear in the client's Documents tab, filed by milestone.</p>`}
+      ${disclosure("Share a document", `<form class="p-form p-form--2" id="deliverable-form">
+        <div class="p-field p-span"><label for="dl-file">File (PDF, Office, CSV, text or image; up to 50 MB)</label><input class="p-input" id="dl-file" name="file" type="file" accept="${FILE_ACCEPT}" required></div>
+        <div class="p-field"><label for="dl-title">Title</label><input class="p-input" id="dl-title" name="title" placeholder="e.g. Cash-flow model, v2"></div>
+        <div class="p-field"><label for="dl-ms">Milestone</label><select class="p-select" id="dl-ms" name="milestone_id"><option value="">General</option>${milestones.map((m) => `<option value="${esc(m.id)}"${m.status === "current" ? " selected" : ""}>${esc(m.title)}</option>`).join("")}</select></div>
+        <div class="p-field p-span"><label for="dl-note">Note for the client (optional)</label><input class="p-input" id="dl-note" name="note" placeholder="What it is and what to look at first"></div>
+        <div class="p-span p-row"><span class="room-add__perms"><label class="p-check p-check--inline"><input type="checkbox" name="notify" checked> Email the client</label>${members.length ? `<label class="p-check p-check--inline"><input type="checkbox" name="team"> Team can see it too</label>` : ""}</span><button class="btn btn--navy btn--sm" type="submit">Share with client</button></div>
+      </form>`)}
+    </section>`,
+    teamFiles: () => (teamFiles.length ? `<section class="p-card"><p class="p-kicker">Team files</p><ul class="doc-list">${teamFiles.map((f) => `<li class="doc">
+      <span class="doc__icon doc__icon--mine" aria-hidden="true">${esc((f.name.split(".").pop() || "").slice(0, 4).toUpperCase())}</span>
+      <div class="doc__body"><p class="doc__title">${esc(f.name)}</p>${f.note ? `<p class="doc__note">${esc(f.note)}</p>` : ""}<p class="doc__meta">${esc(who(f.uploaded_by))} · ${esc(relTime(f.created_at))}${f.size ? ` · ${esc(fmtSize(f.size))}` : ""}</p></div>
+      <div class="btn-row" style="gap:.5rem 1rem"><button class="p-linkbtn" data-open-file="${esc(f.path)}">Open</button><button class="p-linkbtn" data-team-file-delete="${esc(f.id)}">Remove</button></div></li>`).join("")}</ul></section>` : ""),
+    updates: () => `<section class="p-card"><p class="p-kicker">Published updates</p>
+      ${pubs.length ? `<ul class="p-list">${pubs.map((p) => `<li><div class="p-row"><h2 class="p-item">${esc(p.title)}</h2><span class="p-muted">${esc(fmtDate(p.published_at))}</span></div></li>`).join("")}</ul>` : `<p class="p-muted">Nothing published yet. Updates come from the AI drafts below, or you write one here.</p>`}
+      ${disclosure("Write an update by hand", `<form class="p-form" id="manual-pub">
+        <div class="p-field"><label for="m-title">Title</label><input class="p-input" id="m-title" name="title" required></div>
+        <div class="p-field"><label for="m-body">Message</label><textarea class="p-textarea" id="m-body" name="body" rows="6" required></textarea></div>
+        <button class="btn btn--navy btn--sm" type="submit">Publish to client</button>
+      </form>`)}
+    </section>`,
+    drafts: () => `<section class="p-card"><div class="p-row"><p class="p-kicker">AI drafts</p>${draftsToReview ? `<span class="pill pill--gold">${draftsToReview} to review</span>` : ""}</div>
+      ${drafts.length ? `<ul class="p-list">${drafts.map((d) => `<li class="p-row"><div>${statusPill(d.status)} <span class="p-muted">${esc(relTime(d.created_at))}</span>${d.error ? `<p class="p-muted">${esc(d.error)}</p>` : ""}</div>${d.status === "awaiting_review" || d.status === "published" || d.status === "dismissed" ? `<a class="p-linkbtn" href="#draft=${esc(d.id)}">Open</a>` : ""}</li>`).join("")}</ul>` : `<p class="p-muted">A draft is generated automatically when the client submits a questionnaire.</p>`}
+    </section>`,
+    milestonesManage: () => `<section class="p-card"><p class="p-kicker">Milestones</p>
+      ${milestones.length ? `<ul class="p-list">${milestones.map((m) => `<li class="p-row"><div><strong>${esc(m.title)}</strong><br><span class="p-muted">${esc(m.due_label || "")}</span></div>
+        <div class="btn-row" style="gap:.5rem"><select class="p-select p-select--sm" data-ms-status="${esc(m.id)}" aria-label="Status of ${esc(m.title)}">${MS_STATUS.map(([v, l]) => `<option value="${v}"${m.status === v ? " selected" : ""}>${l}</option>`).join("")}</select>
+        <button class="p-linkbtn" data-ms-delete="${esc(m.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">No milestones yet. The client sees them as the plan, with the documents each one produced.</p>`}
+      ${disclosure("Add a milestone", `<form class="p-form p-form--2" id="ms-form">
+        <div class="p-field"><label for="ms-title">Milestone</label><input class="p-input" id="ms-title" name="title" required></div>
+        <div class="p-field"><label for="ms-when">When</label><input class="p-input" id="ms-when" name="due_label" placeholder="Week 6"></div>
+        <div class="p-span"><button class="btn btn--ghost btn--sm" type="submit">Add milestone</button></div>
+      </form>`)}
+    </section>`,
+    decisions: () => `<section class="p-card"><p class="p-kicker">Decision log</p>
+      ${decisions.length ? `<ul class="p-list">${decisions.map((d) => `<li><div class="p-row"><strong>${esc(d.decision)}</strong><button class="p-linkbtn" data-dec-delete="${esc(d.id)}">Remove</button></div><p class="p-muted">${esc(fmtDate(d.decided_on))}${d.owner ? ` · ${esc(d.owner)}` : ""}${d.rationale ? ` · ${esc(d.rationale)}` : ""}</p></li>`).join("")}</ul>` : `<p class="p-muted">Record decisions as they’re made. The client sees them with the reasons.</p>`}
+      ${disclosure("Record a decision", `<form class="p-form" id="dec-form">
+        <div class="p-field"><label for="dec-what">Decision</label><input class="p-input" id="dec-what" name="decision" required></div>
+        <div class="p-field"><label for="dec-why">Why</label><textarea class="p-textarea" id="dec-why" name="rationale" rows="2"></textarea></div>
+        <div class="p-form p-form--2"><div class="p-field"><label for="dec-owner">Owner</label><input class="p-input" id="dec-owner" name="owner"></div>
+        <div class="p-field"><label for="dec-date">Date</label><input class="p-input" id="dec-date" name="decided_on" type="date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
+        <button class="btn btn--ghost btn--sm" type="submit">Record decision</button>
+      </form>`)}
+    </section>`,
+    context: () => `<section class="p-card p-card--accent"><p class="p-kicker">Report context for the AI</p>
+      <p class="p-muted">Private to you. Paste the report's key assumptions, figures and conclusions. Claude compares each answer against this to propose section updates.</p>
+      <form class="p-form" id="context-form">
+        <textarea class="p-textarea" name="report_context" rows="12" aria-label="Report context for the AI">${esc(eng.report_context || "")}</textarea>
+        <div class="p-field"><label for="e-summary">Summary the client sees</label><textarea class="p-textarea" id="e-summary" name="summary" rows="3">${esc(eng.summary || "")}</textarea></div>
+        <button class="btn btn--navy btn--sm" type="submit">Save</button>
+      </form></section>`,
+    clientCard: () => `<section class="p-card p-card--navy"><p class="p-kicker">The client</p>
+      <h3>${esc(client.full_name || client.email || "Client")}</h3>
+      <p style="color:var(--on-dark-muted)">${[client.company, client.email, client.phone].filter(Boolean).map(esc).join(" · ")}</p>
+      <p style="margin-top:1rem;font-size:.85rem"><a class="link-on-dark" href="dashboard.html">See the client’s view</a> (opens your own room if you have none)</p>
+    </section>`,
+    team: () => `<section class="p-card" id="team"><div class="p-row"><p class="p-kicker">Team</p><span class="p-muted">${activeMembers.length ? `${activeMembers.length} outside adviser${activeMembers.length > 1 ? "s" : ""}` : ""}</span></div>
+      ${members.length ? `<ul class="people">${members.map((m) => `<li class="person${m.status !== "active" ? " is-off" : ""}">
+        <span class="msg__avatar msg__avatar--initials" aria-hidden="true">${esc((m.name || "?").split(/\s+/).map((w) => w[0]).slice(0, 2).join("").toUpperCase())}</span>
+        <div class="person__body"><p class="person__name">${esc(m.name)}</p><p class="person__role">${esc([m.role_label, m.organization, m.email].filter(Boolean).join(" · "))}</p>
+          <p class="person__access">${esc(accessText(m))} · ${[m.can_message && "messages", m.can_files && "files", m.can_model && "project model", "requests"].filter(Boolean).join(", ")}${m.last_seen_at ? ` · last in ${esc(relTime(m.last_seen_at))}` : m.status === "active" ? " · not signed in yet" : ""}</p></div>
+        <div class="btn-row" style="gap:.4rem 1rem;flex-direction:column;align-items:flex-end">
+          ${m.status === "active" && (models.length || owners.length) && !sheets.some((x) => x.contractor_id === m.user_id) ? `<button class="p-linkbtn" data-member-model="${esc(m.id)}" data-allow="${m.can_model ? "0" : "1"}">${m.can_model ? "Remove model access" : "Give model access"}</button>` : ""}
+          ${m.status === "active" ? `<button class="p-linkbtn" data-member-extend="${esc(m.id)}">+30 days</button><button class="p-linkbtn p-linkbtn--danger" data-member-revoke="${esc(m.id)}">Remove</button>` : `<button class="p-linkbtn" data-member-restore="${esc(m.id)}">Restore 30 days</button>`}
+        </div></li>`).join("")}</ul>` : `<p class="p-muted">Nobody outside yet. The client can add their attorney, CPA or lender from their room, or you can add them here. Members see only the team thread, team files and their tasks.</p>`}
+      ${disclosure("Add someone", `<form class="p-form p-form--2" id="member-form">
+        <div class="p-field"><label for="mb-name">Name</label><input class="p-input" id="mb-name" name="full_name" required></div>
+        <div class="p-field"><label for="mb-email">Email</label><input class="p-input" id="mb-email" name="email" type="email" required></div>
+        <div class="p-field"><label for="mb-role">Role</label><input class="p-input" id="mb-role" name="role_label" placeholder="Attorney, CPA, Lender…"></div>
+        <div class="p-field"><label for="mb-org">Firm</label><input class="p-input" id="mb-org" name="organization"></div>
+        <div class="p-field"><label for="mb-len">Access</label><select class="p-select" id="mb-len" name="length"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="">Until the engagement ends</option></select></div>
+        <div class="p-field room-add__perms" style="align-self:end"><label class="p-check"><input type="checkbox" name="can_message" checked> Messages</label><label class="p-check"><input type="checkbox" name="can_files" checked> Files</label></div>
+        <div class="p-span"><button class="btn btn--navy btn--sm" type="submit">Send invitation</button></div>
+      </form>`)}
+    </section>`,
+    teamThread: () => `<section class="p-card"><p class="p-kicker">Team thread</p>
+      ${teamMessages.length ? thread(teamMessages, "team-thread", who) : `<p class="p-muted">${members.length ? "No team messages yet." : "Appears once someone is on the team."}</p>`}
+      ${members.length ? `<form class="p-form" id="team-msg-form"><label class="visually-hidden" for="team-msg-body">Write to the team</label>
+        <textarea class="p-textarea" id="team-msg-body" name="body" rows="2" maxlength="8000" placeholder="Write to the whole team…" required></textarea>
+        <div class="p-row"><span class="p-muted">Everyone on the team who can message is emailed a link.</span><button class="btn btn--ghost btn--sm" type="submit">Send to team</button></div></form>` : ""}
+    </section>`,
+    questionnaires: () => `<section class="p-card"><p class="p-kicker">Questionnaires</p>
+      ${assignments.length ? `<div class="p-table-wrap" tabindex="0" role="region" aria-label="Table"><table class="p-table"><thead><tr><th>Questionnaire</th><th>Progress</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      ${assignments.map((a) => `<tr><td><strong>${esc(a.questionnaire?.title)}</strong><br><span class="p-muted">${a.due_date ? `Due ${esc(fmtDate(a.due_date, { month: "short", day: "numeric" }))}` : "No due date"}</span></td>
+        <td style="min-width:140px">${progressBar(a.progress)}<span class="p-muted">${a.progress.answered + a.progress.unknown}/${a.progress.total}</span></td>
+        <td>${statusPill(a.status)}</td>
+        <td><div class="btn-row" style="gap:.5rem 1rem">
+          <a class="p-linkbtn" href="#responses=${esc(a.id)}">Answers</a>
+          ${a.status === "submitted" || a.status === "complete" ? `<button class="p-linkbtn" data-reopen="${esc(a.id)}">Reopen</button>` : ""}
+          ${a.status === "submitted" ? `<button class="p-linkbtn" data-complete="${esc(a.id)}">Mark complete</button>` : ""}
+          <button class="p-linkbtn" data-regen="${esc(a.id)}">AI draft</button>
+        </div></td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="p-muted">No questionnaires assigned yet.</p>`}
+      ${disclosure("Assign a questionnaire", `<form class="p-form p-form--2" id="assign-form">
+        <div class="p-field p-span"><label for="a-q">Questionnaire</label>
+          <select class="p-select" id="a-q" name="questionnaire" required>${questionnaires.map((q) => `<option value="${esc(q.id)}">${esc(q.title)} (${q.count} questions)</option>`).join("")}</select></div>
+        <div class="p-field"><label for="a-due">Due date</label><input class="p-input" id="a-due" name="due" type="date"></div>
+        <div class="p-field p-span"><label for="a-msg">Note to the client</label><textarea class="p-textarea" id="a-msg" name="message" rows="2" placeholder="Shown at the top of the questionnaire"></textarea></div>
+        <div class="p-span"><button class="btn btn--navy btn--sm" type="submit" ${questionnaires.length ? "" : "disabled"}>Assign</button></div>
+      </form>`)}
+    </section>`,
+    remove: () => (models.length || owners.length || sheets.length ? `<section class="p-card"><p class="p-kicker">Models and sheets</p>
+      <p class="p-muted">Deleting is permanent. The project model keeps its pricing sheet; the owner model keeps its project model.</p>
+      <ul class="p-list">${models.map((m) => `<li class="p-row"><span>Project model: <strong>${esc(m.title)}</strong></span><button class="p-linkbtn p-linkbtn--danger" data-model-delete="${esc(m.id)}">Delete</button></li>`).join("")}
+        ${owners.map((m) => `<li class="p-row"><span>Owner model: <strong>${esc(m.title)}</strong></span><button class="p-linkbtn p-linkbtn--danger" data-owner-delete="${esc(m.id)}">Delete</button></li>`).join("")}
+        ${sheets.map((x) => `<li class="p-row"><span>Pricing sheet: <strong>${esc(x.title)}</strong></span><button class="p-linkbtn p-linkbtn--danger" data-sheet-delete="${esc(x.id)}">Delete</button></li>`).join("")}</ul>
+    </section>` : ""),
+    closeout: () => `<section class="p-card closeout"><p class="p-kicker">Close out</p>
+      <p class="p-muted">When the work is done, mark it complete: the client keeps read access and outside team members lose theirs. To remove the client's data entirely, export it first, then delete.</p>
+      <div class="btn-row" style="gap:.75rem 1.25rem;margin-top:1rem">
+        ${eng.status === "active" ? `<button class="btn btn--ghost btn--sm" data-eng-status="complete">Mark complete</button>` : `<button class="btn btn--ghost btn--sm" data-eng-status="active">Reopen</button>`}
+        <button class="p-linkbtn" data-eng-export>Export everything (JSON)</button>
+        <button class="p-linkbtn p-linkbtn--danger" data-eng-delete>Delete engagement and files</button>
       </div>
-      <div class="p-stack">
-        <section class="p-card p-card--navy"><p class="p-kicker">Client room</p>
-          <form class="p-form" id="room-form">
-            <div class="p-field"><label for="r-kick" style="color:var(--on-dark-muted)">Began</label><input class="p-input" id="r-kick" name="kickoff_date" type="date" value="${esc(eng.kickoff_date || "")}"></div>
-            <div class="p-field"><label for="r-meet" style="color:var(--on-dark-muted)">Next conversation</label><input class="p-input" id="r-meet" name="next_meeting_at" type="datetime-local" value="${esc(localDT(eng.next_meeting_at))}"></div>
-            <div class="p-field"><label for="r-note" style="color:var(--on-dark-muted)">Agenda the client sees</label><textarea class="p-textarea" id="r-note" name="next_meeting_note" rows="2">${esc(eng.next_meeting_note || "")}</textarea></div>
-            <div class="p-field"><label for="r-link" style="color:var(--on-dark-muted)">Video link (https)</label><input class="p-input" id="r-link" name="meeting_link" type="url" value="${esc(eng.meeting_link || "")}"></div>
-            <button class="btn btn--gold btn--sm" type="submit">Save</button>
-          </form>
-          <p style="margin-top:1rem;font-size:.85rem"><a class="link-on-dark" href="dashboard.html">See the client’s view</a> (opens your own room if you have none)</p>
-        </section>
-        <section class="p-card"><p class="p-kicker">Milestones</p>
-          ${milestones.length ? `<ul class="p-list">${milestones.map((m) => `<li class="p-row"><div><strong>${esc(m.title)}</strong><br><span class="p-muted">${esc(m.due_label || "")}</span></div>
-            <div class="btn-row" style="gap:.5rem"><select class="p-select p-select--sm" data-ms-status="${esc(m.id)}" aria-label="Status of ${esc(m.title)}">${MS_STATUS.map(([v, l]) => `<option value="${v}"${m.status === v ? " selected" : ""}>${l}</option>`).join("")}</select>
-            <button class="p-linkbtn" data-ms-delete="${esc(m.id)}">Remove</button></div></li>`).join("")}</ul>` : `<p class="p-muted">No milestones yet.</p>`}
-          <form class="p-form p-form--2" id="ms-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
-            <div class="p-field"><label for="ms-title">Milestone</label><input class="p-input" id="ms-title" name="title" required></div>
-            <div class="p-field"><label for="ms-when">When</label><input class="p-input" id="ms-when" name="due_label" placeholder="Week 6"></div>
-            <div class="p-span"><button class="btn btn--ghost btn--sm" type="submit">Add milestone</button></div>
-          </form>
-        </section>
-        <section class="p-card"><p class="p-kicker">Decision log</p>
-          ${decisions.length ? `<ul class="p-list">${decisions.map((d) => `<li><div class="p-row"><strong>${esc(d.decision)}</strong><button class="p-linkbtn" data-dec-delete="${esc(d.id)}">Remove</button></div><p class="p-muted">${esc(fmtDate(d.decided_on))}${d.owner ? ` · ${esc(d.owner)}` : ""}${d.rationale ? ` · ${esc(d.rationale)}` : ""}</p></li>`).join("")}</ul>` : `<p class="p-muted">Record decisions as they’re made. The client sees them with the reasons.</p>`}
-          <form class="p-form" id="dec-form" style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid var(--rule)">
-            <div class="p-field"><label for="dec-what">Decision</label><input class="p-input" id="dec-what" name="decision" required></div>
-            <div class="p-field"><label for="dec-why">Why</label><textarea class="p-textarea" id="dec-why" name="rationale" rows="2"></textarea></div>
-            <div class="p-form p-form--2"><div class="p-field"><label for="dec-owner">Owner</label><input class="p-input" id="dec-owner" name="owner"></div>
-            <div class="p-field"><label for="dec-date">Date</label><input class="p-input" id="dec-date" name="decided_on" type="date" value="${new Date().toISOString().slice(0, 10)}"></div></div>
-            <button class="btn btn--ghost btn--sm" type="submit">Record decision</button>
-          </form>
-        </section>
-        <section class="p-card p-card--accent"><p class="p-kicker">Report context for the AI</p>
-          <p class="p-muted">Private to you. Paste the report's key assumptions, figures and conclusions. Claude compares each answer against this to propose section updates.</p>
-          <form class="p-form" id="context-form">
-            <textarea class="p-textarea" name="report_context" rows="12" aria-label="Report context for the AI">${esc(eng.report_context || "")}</textarea>
-            <div class="p-field"><label for="e-summary">Summary the client sees</label><textarea class="p-textarea" id="e-summary" name="summary" rows="3">${esc(eng.summary || "")}</textarea></div>
-            <button class="btn btn--navy btn--sm" type="submit">Save</button>
-          </form></section>
-        <section class="p-card"><p class="p-kicker">Activity</p>
-          ${activity.length ? `<ul class="p-list">${activity.map((a) => `<li><strong>${esc(activityLabel(a))}</strong><p class="p-muted">${esc(relTime(a.created_at))}</p></li>`).join("")}</ul>` : `<p class="p-muted">No activity yet.</p>`}
-        </section>
-        <section class="p-card closeout"><p class="p-kicker">Close out</p>
-          <p class="p-muted">When the work is done, mark it complete: the client keeps read access and outside team members lose theirs. To remove the client's data entirely, export it first, then delete.</p>
-          <div class="btn-row" style="gap:.75rem 1.25rem;margin-top:1rem">
-            ${eng.status === "active" ? `<button class="btn btn--ghost btn--sm" data-eng-status="complete">Mark complete</button>` : `<button class="btn btn--ghost btn--sm" data-eng-status="active">Reopen</button>`}
-            <button class="p-linkbtn" data-eng-export>Export everything (JSON)</button>
-            <button class="p-linkbtn p-linkbtn--danger" data-eng-delete>Delete engagement and files</button>
-          </div>
-        </section>
-      </div>
+    </section>`,
+  };
+
+  /* ---------------------------------------------- beside every tab */
+  const next = eng.next_meeting_at ? new Date(eng.next_meeting_at) : null;
+  const side = `
+    <section class="p-card p-card--navy"><p class="p-kicker">${next && next.getTime() < Date.now() ? "Last conversation" : "Next conversation"}</p>
+      ${next ? `<h3>${esc(fmtDate(eng.next_meeting_at, { weekday: "long", month: "long", day: "numeric" }))}</h3><p style="color:var(--on-dark-muted)">${esc(next.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))}${eng.next_meeting_note ? ` · ${esc(eng.next_meeting_note)}` : ""}${eng.meeting_link ? ` · <a class="link-on-dark" href="${esc(eng.meeting_link)}" target="_blank" rel="noopener">Video link</a>` : ""}</p>` : `<p style="color:var(--on-dark-muted)">Not scheduled. The client sees “not scheduled yet” and can suggest a time.</p>`}
+      <details class="room-add"><summary class="p-linkbtn" style="color:var(--champagne)">${next ? "Change" : "Schedule"}</summary>
+        <form class="p-form" id="room-form">
+          <div class="p-field"><label for="r-meet" style="color:var(--on-dark-muted)">When</label><input class="p-input" id="r-meet" name="next_meeting_at" type="datetime-local" value="${esc(localDT(eng.next_meeting_at))}"></div>
+          <div class="p-field"><label for="r-note" style="color:var(--on-dark-muted)">Agenda the client sees</label><textarea class="p-textarea" id="r-note" name="next_meeting_note" rows="2">${esc(eng.next_meeting_note || "")}</textarea></div>
+          <div class="p-field"><label for="r-link" style="color:var(--on-dark-muted)">Video link (https)</label><input class="p-input" id="r-link" name="meeting_link" type="url" value="${esc(eng.meeting_link || "")}"></div>
+          <div class="p-field"><label for="r-kick" style="color:var(--on-dark-muted)">Engagement began</label><input class="p-input" id="r-kick" name="kickoff_date" type="date" value="${esc(eng.kickoff_date || "")}"></div>
+          <button class="btn btn--gold btn--sm" type="submit">Save</button>
+        </form></details>
+    </section>
+    ${tab === "plan" ? "" : `<section class="p-card"><div class="p-row"><p class="p-kicker">Milestones</p><span class="p-muted">${milestones.length ? `${milestones.filter((m) => m.status === "done").length} of ${milestones.length} done` : ""}</span></div>
+      ${milestones.length ? `<ul class="p-list admin-ms">${milestones.map((m) => `<li class="p-row"><div><strong>${esc(m.title)}</strong>${m.due_label ? `<br><span class="p-muted">${esc(m.due_label)}</span>` : ""}</div>
+        <select class="p-select p-select--sm" data-ms-status="${esc(m.id)}" aria-label="Status of ${esc(m.title)}">${MS_STATUS.map(([v, l]) => `<option value="${v}"${m.status === v ? " selected" : ""}>${l}</option>`).join("")}</select></li>`).join("")}</ul>` : `<p class="p-muted">No milestones yet.</p>`}
+      <p style="margin-top:.75rem"><a class="p-linkbtn" href="#engagement=${esc(id)}/plan">${milestones.length ? "Manage the plan" : "Add milestones"}</a></p>
+    </section>`}`;
+
+  const TAB_CARDS = {
+    today: [cards.messages, cards.requests, () => cards.activity(8)],
+    models: [cards.project, cards.owner, cards.pricing],
+    documents: [cards.deliverables, cards.teamFiles, cards.updates, cards.drafts],
+    plan: [cards.milestonesManage, cards.decisions, cards.context, () => cards.activity(40)],
+    people: [cards.clientCard, cards.team, cards.teamThread],
+    settings: [cards.questionnaires, cards.remove, cards.closeout],
+  };
+  const badges = { today: unreadMsgs + toReview, documents: draftsToReview, people: activeMembers.filter((m) => !m.last_seen_at).length };
+  const tabs = `<nav class="room-tabs room-tabs--admin" aria-label="Engagement"><div class="room-tabs__inner">${ENG_TABS.map(([k, label]) => `<a href="#engagement=${esc(id)}/${k}" class="room-tabs__link"${k === tab ? ' aria-current="page"' : ""}>${label}${badges[k] ? `<span class="room-tabs__badge${k === "people" ? " room-tabs__badge--soft" : ""}" aria-label="${badges[k]} ${k === "today" ? "waiting" : k === "documents" ? "to review" : "not signed in yet"}">${badges[k]}</span>` : ""}</a>`).join("")}</div></nav>`;
+  return title(esc(eng.title), `${esc(client.full_name || client.email || "")}${client.company ? ` · ${esc(client.company)}` : ""}`, statusPill(eng.status)) + tabs + `
+    <div class="draft-grid admin-eng">
+      <div class="p-stack">${TAB_CARDS[tab].map((fn) => fn()).join("")}</div>
+      <div class="p-stack admin-side">${side}</div>
     </div>`;
 }
 
@@ -520,7 +562,7 @@ async function route() {
     else if (key === "proposals") body = await viewProposals();
     else if (key === "proposal") { body = await viewProposal(arg); active = "proposals"; }
     else if (key === "clients") body = await viewClients();
-    else if (key === "engagement") { body = await viewEngagement(arg); active = "clients"; }
+    else if (key === "engagement") { body = await viewEngagement(engagementId(), engTab()); active = "clients"; }
     else if (key === "responses") { body = await viewResponses(arg); active = "clients"; }
     else if (key === "draft") { body = await viewDraft(arg); active = "drafts"; }
     else if (key === "drafts") body = await viewDrafts(c);
@@ -544,8 +586,7 @@ main.addEventListener("submit", async (e) => {
   const label = btn?.textContent;
   if (btn) btn.disabled = true;
   try {
-    const hash = location.hash.slice(1);
-    const engId = hash.startsWith("engagement=") ? hash.split("=")[1] : null;
+    const engId = engagementId();
     if (await pipelineSubmit(form, route)) return;
     if (form.id === "msg-form") {
       const body = form.body.value.trim();
@@ -699,7 +740,7 @@ main.addEventListener("click", async (e) => {
     else if (t.dataset.sheetDelete) {
       if (await confirmDialog({ title: "Delete this pricing sheet?", body: "<p>Every line, the budget and the submitted versions are deleted. It can't be undone.</p>", confirmLabel: "Delete" })) {
         await store.sovDeleteSheet(t.dataset.sheetDelete);
-        const hash = location.hash.slice(1); const engId = hash.split("=")[1];
+        const engId = engagementId();
         for (const a of (await store.actionItems(engId)).filter((x) => x.kind === "pricing" && x.link_ref === t.dataset.sheetDelete)) await store.deleteActionItem(a.id);
         toast("Deleted."); route();
       }
@@ -708,24 +749,24 @@ main.addEventListener("click", async (e) => {
       if (await confirmDialog({ title: "Remove this item?", body: "<p>It disappears from the client's list.</p>", confirmLabel: "Remove" })) { await store.deleteActionItem(t.dataset.actionDelete); route(); }
     }
     else if (t.dataset.deliverableDelete) {
-      const d = (await store.deliverables(location.hash.split("=")[1])).find((x) => x.id === t.dataset.deliverableDelete);
+      const d = (await store.deliverables(engagementId())).find((x) => x.id === t.dataset.deliverableDelete);
       if (d && await confirmDialog({ title: "Remove this document?", body: `<p><strong>${esc(d.title)}</strong> is deleted and disappears from the client's Documents.</p>`, confirmLabel: "Remove" })) { await store.deleteDeliverable(d); toast("Removed."); route(); }
     }
     else if (t.dataset.engStatus) {
-      const engId = location.hash.split("=")[1];
+      const engId = engagementId();
       await store.updateEngagement(engId, { status: t.dataset.engStatus });
       toast(t.dataset.engStatus === "complete" ? "Marked complete. Team members' access has ended." : "Reopened.");
       route();
     }
     else if (t.hasAttribute("data-eng-export")) {
-      const engId = location.hash.split("=")[1];
+      const engId = engagementId();
       const data = await store.exportEngagement(engId);
       const slug = (data.engagement.title || "engagement").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
       download(`${slug}-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(data, null, 2), "application/json");
       toast("Export downloaded. Files are listed by path; download any you need from Deliverables and Documents.");
     }
     else if (t.hasAttribute("data-eng-delete")) {
-      const engId = location.hash.split("=")[1];
+      const engId = engagementId();
       const eng = await store.engagement(engId);
       const files = await store.engagementObjects(engId);
       const typed = await new Promise((resolve) => {
@@ -829,7 +870,7 @@ main.addEventListener("change", async (e) => {
   // Alerts across every engagement; choosing one opens that engagement.
   mountBell({
     me: session.user.id,
-    open: (n) => { if (n.engagement_id) { const h = `engagement=${n.engagement_id}`; if (location.hash.slice(1) === h) route(); else location.hash = h; } },
-    onChange: (row) => { if (row && location.hash.slice(1) === `engagement=${row.engagement_id}` && !main.contains(document.activeElement)) route(); },
+    open: (n) => { if (n.engagement_id) { const h = `engagement=${n.engagement_id}/today`; if (engagementId() === n.engagement_id && engTab() === "today") route(); else location.hash = h; } },
+    onChange: (row) => { if (row && engagementId() === row.engagement_id && !main.contains(document.activeElement)) route(); },
   }).catch((err) => console.warn("Alerts unavailable:", err.message));
 })();

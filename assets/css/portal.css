@@ -965,3 +965,48 @@ span.pm-st { display: inline-block; margin-top: 0.25rem; }
 .om-pers.is-needed td:first-child { box-shadow: inset 2px 0 0 #B4533C; }
 .om-pers.is-in_progress td:first-child { box-shadow: inset 2px 0 0 var(--champagne-deep); }
 @media print { body.is-printing-sov .om-presets, body.is-printing-sov .om-del-col { display: none !important; } }
+
+/* Owner model: the section bar, sections and property cards that open and close, the two views */
+.om-bar { position: sticky; top: var(--om-bar-top, var(--p-header-h, 74px)); z-index: 20; background: #fff; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); margin-top: 1.25rem; }
+.om-bar__inner { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0 clamp(1.25rem, 2.5vw, 2rem); }
+.om-bar__links { display: flex; gap: clamp(0.9rem, 2vw, 1.5rem); overflow-x: auto; scrollbar-width: none; min-width: 0; }
+.om-bar__links::-webkit-scrollbar { display: none; }
+.om-bar__links button { font: inherit; font-size: 0.64rem; letter-spacing: 0.18em; text-transform: uppercase; font-weight: 500; color: var(--muted); background: none; border: 0; border-bottom: 2px solid transparent; padding: 0.85rem 0 0.7rem; white-space: nowrap; cursor: pointer; }
+.om-bar__links button:hover { color: var(--navy); }
+.om-bar__links button.is-current { color: var(--navy); border-bottom-color: var(--champagne); }
+.om-view { flex: none; margin: 0.45rem 0; }
+.om-view__note { padding: 1rem clamp(1.25rem, 2.5vw, 2rem) 0; max-width: 60rem; }
+.om-sec { padding-top: 0; padding-bottom: 0; scroll-margin-top: calc(var(--om-bar-top, var(--p-header-h, 74px)) + 3.2rem); }
+.om-sec__head { display: flex; align-items: baseline; gap: 0.35rem 1.25rem; flex-wrap: wrap; padding: 1.1rem 0; cursor: pointer; }
+.om-sec.is-fixed .om-sec__head { cursor: default; }
+.om-sec__head .pm-h { margin: 0; }
+.om-sec__sum { font-size: 0.88rem; color: var(--muted); }
+.om-sec__sum b { color: var(--bronze); font-weight: 500; }
+.om-sec__body { padding-bottom: 1.5rem; }
+.om-sec__body[hidden], .om-prop__body[hidden] { display: none; }
+.om-toggle { width: 1.5rem; height: 1.5rem; display: inline-grid; place-items: center; font: inherit; background: none; border: 1px solid var(--rule); border-radius: 50%; padding: 0; cursor: pointer; color: var(--bronze); align-self: center; flex: none; }
+.om-toggle:hover { border-color: var(--teal); color: var(--teal); }
+.om-chev { width: 0.4rem; height: 0.4rem; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg) translate(-1px, 0); transition: transform 0.2s var(--ease); }
+.is-open > .om-sec__head .om-chev, .om-prop.is-open .om-chev { transform: rotate(45deg) translate(0, -1px); }
+.om-prop__head { display: flex; align-items: center; gap: 0.35rem 1rem; flex-wrap: wrap; cursor: pointer; }
+.om-prop__head .room-sub { margin: 0; }
+.om-prop--line .om-prop__head { cursor: default; }
+.om-prop__line { font-size: 0.86rem; color: var(--muted); }
+.om-prop__acts { margin-left: auto; display: inline-flex; align-items: center; gap: 0.35rem; }
+.om-prop__body { margin-top: 0.75rem; }
+.om-prop--line + .om-prop--line { margin-top: 0.75rem; padding-top: 0.75rem; }
+.om-findings__more { margin-top: 0.9rem; display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; align-items: center; }
+.om--summary .pm-part { border-top-color: var(--rule); }
+@media (max-width: 760px) { .om-bar__inner { flex-wrap: wrap; } .om-view { margin: 0 0 0.6rem; } }
+@media print { .om-bar, .om-view__note, .om-toggle { display: none !important; } .om-sec__body[hidden], .om-prop__body[hidden] { display: block !important; } }
+.om-finding__more { margin-top: 0.35rem; }
+.om-finding__more > summary { list-style: none; cursor: pointer; font-size: 0.72rem; }
+.om-finding__more > summary::-webkit-details-marker { display: none; }
+.om-finding__more[open] > summary { margin-bottom: 0.35rem; }
+
+/* Admin engagement page: tabs, the column beside every tab */
+.room-tabs--admin { margin: -0.75rem 0 1.75rem; }
+.room-tabs--admin .room-tabs__inner { padding: 0; }
+.admin-side { position: sticky; top: calc(74px + 4.5rem); }
+.admin-ms .p-select--sm { width: auto; }
+@media (max-width: 1100px) { .admin-side { position: static; } }
