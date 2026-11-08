@@ -14,7 +14,19 @@
   <link rel="preload" href="../assets/fonts/jost-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="../assets/css/styles.css?v=720e1bac02">
   <link rel="stylesheet" href="../assets/css/portal.css?v=87b3aefc2e">
-  <script type="module" src="../assets/js/portal/dashboard.js?v=16aa180cfa"></script>
+  <!-- preload:start -->
+  <link rel="modulepreload" href="../assets/js/portal/bell.js">
+  <link rel="modulepreload" href="../assets/js/portal/config.js">
+  <link rel="modulepreload" href="../assets/js/portal/model-calc.js">
+  <link rel="modulepreload" href="../assets/js/portal/model.js">
+  <link rel="modulepreload" href="../assets/js/portal/owner-calc.js">
+  <link rel="modulepreload" href="../assets/js/portal/owner.js">
+  <link rel="modulepreload" href="../assets/js/portal/sov.js">
+  <link rel="modulepreload" href="../assets/js/portal/store.js">
+  <link rel="modulepreload" href="../assets/js/portal/ui.js">
+  <link rel="preload" as="script" href="../assets/vendor/supabase.min.js">
+  <!-- preload:end -->
+  <script type="module" src="../assets/js/portal/dashboard.js?v=1ef39987c4"></script>
 </head>
 <body class="portal">
 <a class="skip-link" href="#main">Skip to content</a>

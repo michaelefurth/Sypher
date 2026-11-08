@@ -85,15 +85,15 @@ export async function mountModel(el, { modelId, role, me, nameOf = () => "Someon
 
   async function load() {
     model = await store.pmModel(modelId);
-    [lines, inputs, comments, log, snapshots] = await Promise.all([
+    // Everything else in one round once the model row (engagement and sheet ids) is known.
+    const sid = model.sov_sheet_id;
+    let sheet, sl, budget;
+    [lines, inputs, comments, log, snapshots, sheet, sl, budget] = await Promise.all([
       store.pmLines(modelId), store.pmInputs(modelId), store.pmComments(modelId).catch(() => []),
       store.pmInputLog(model.engagement_id).catch(() => []), store.pmSnapshots(modelId).catch(() => []),
+      sid ? store.sovSheet(sid).catch(() => null) : null, sid ? store.sovLines(sid).catch(() => []) : [], sid ? store.sovBudget(model.engagement_id).catch(() => []) : [],
     ]);
-    sov = null;
-    if (model.sov_sheet_id) {
-      const [sheet, sl, budget] = await Promise.all([store.sovSheet(model.sov_sheet_id).catch(() => null), store.sovLines(model.sov_sheet_id).catch(() => []), store.sovBudget(model.engagement_id).catch(() => [])]);
-      if (sheet) sov = { sheet, lines: sl, budget: new Map(budget.map((b) => [b.line_id, b])) };
-    }
+    sov = sheet ? { sheet, lines: sl, budget: new Map(budget.map((b) => [b.line_id, b])) } : null;
   }
   const compute = () => { result = calculate({ model, lines, inputs, sov, scenario }); };
   const canSet = (i) => admin || i.owner_id === me;
@@ -499,14 +499,18 @@ export async function mountModel(el, { modelId, role, me, nameOf = () => "Someon
 }
 
 /** A short summary for Home and admin cards (no DOM). */
-export async function modelSummary(modelId) {
-  const model = await store.pmModel(modelId);
-  const [lines, inputs] = await Promise.all([store.pmLines(modelId), store.pmInputs(modelId)]);
-  let sov = null;
-  if (model.sov_sheet_id) {
-    const [sheet, sl, budget] = await Promise.all([store.sovSheet(model.sov_sheet_id).catch(() => null), store.sovLines(model.sov_sheet_id).catch(() => []), store.sovBudget(model.engagement_id).catch(() => [])]);
-    if (sheet) sov = { sheet, lines: sl, budget: new Map(budget.map((b) => [b.line_id, b])) };
-  }
+/** A model's forecast figures. Pass the model row when it's already loaded: everything else
+ *  is then fetched in one parallel round (each round trip costs most on a slow connection). */
+export async function modelSummary(modelOrId) {
+  const model = typeof modelOrId === "object" && modelOrId ? modelOrId : await store.pmModel(modelOrId);
+  const sid = model.sov_sheet_id;
+  const [lines, inputs, sheet, sl, budget] = await Promise.all([
+    store.pmLines(model.id), store.pmInputs(model.id),
+    sid ? store.sovSheet(sid).catch(() => null) : null,
+    sid ? store.sovLines(sid).catch(() => []) : [],
+    sid ? store.sovBudget(model.engagement_id).catch(() => []) : [],
+  ]);
+  const sov = sheet ? { sheet, lines: sl, budget: new Map(budget.map((b) => [b.line_id, b])) } : null;
   return { model, inputs, result: calculate({ model, lines, inputs, sov, scenario: "forecast" }) };
 }
 

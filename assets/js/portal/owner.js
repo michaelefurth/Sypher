@@ -106,8 +106,11 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
 
   async function load() {
     model = await store.omModel(modelId);
-    [d, log] = await Promise.all([store.omBundle(modelId), store.omInputLog(model.engagement_id).catch(() => [])]);
-    project = model.pm_model_id ? await modelSummary(model.pm_model_id).then((s) => s.result).catch(() => null) : null;
+    // The bundle, the change log and the linked project model, together in one round.
+    [d, log, project] = await Promise.all([
+      store.omBundle(modelId), store.omInputLog(model.engagement_id).catch(() => []),
+      model.pm_model_id ? modelSummary(model.pm_model_id).then((s) => s.result).catch(() => null) : null,
+    ]);
   }
   const compute = () => { result = calculateOwner({ model, ...d, project }); };
   const canSet = (i) => admin || i.owner_id === me;
@@ -780,10 +783,15 @@ export async function mountOwner(el, { modelId, role, me, nameOf = () => "Someon
 }
 
 /** A short summary for Home and admin cards (no DOM). */
-export async function ownerSummary(modelId) {
-  const model = await store.omModel(modelId);
-  const d = await store.omBundle(modelId);
-  const project = model.pm_model_id ? await modelSummary(model.pm_model_id).then((s) => s.result).catch(() => null) : null;
+/** An owner model's figures. Pass the model row (and any project models already loaded) to
+ *  fetch the rest in one parallel round. */
+export async function ownerSummary(modelOrId, projectModels = []) {
+  const model = typeof modelOrId === "object" && modelOrId ? modelOrId : await store.omModel(modelOrId);
+  const pm = model.pm_model_id ? projectModels.find((m) => m.id === model.pm_model_id) || model.pm_model_id : null;
+  const [d, project] = await Promise.all([
+    store.omBundle(model.id),
+    pm ? modelSummary(pm).then((s) => s.result).catch(() => null) : null,
+  ]);
   return { model, inputs: d.inputs, findings: d.findings, result: calculateOwner({ model, ...d, project }) };
 }
 
