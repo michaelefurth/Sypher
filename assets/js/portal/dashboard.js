@@ -94,29 +94,29 @@ async function loadRoom() {
   if (isMember()) {
     const roster = await store.roster(id);
     const mine = roster?.members?.find((m) => m.user_id === me()) || {};
-    const [actions, teamMessages, teamFiles, deliverables, lastRead] = await Promise.all([
+    // Everything that needs only the engagement id, in one round.
+    const [actions, teamMessages, teamFiles, deliverables, lastRead, requestFiles, parties, sheets, models, owners] = await Promise.all([
       store.actionItems(id),
       mine.can_message ? store.messages(id, "team") : [],
       mine.can_files ? store.teamFiles(id) : [],
       mine.can_files ? store.deliverables(id) : [],
       mine.can_message ? store.teamLastRead(id, me()) : null,
-    ]);
-    const [requestFiles, parties, sheets, models, owners] = await Promise.all([
       store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []), store.pmModels(id).catch(() => []), store.omModels(id).catch(() => []),
     ]);
     room = { roster, actions, teamMessages, teamFiles, deliverables, teamLastRead: lastRead, requestFiles, parties, sheets, models, owners };
     await loadPricing(room);
     store.touchMembership(id).catch(() => {});
   } else {
-    const [assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, lastRead] = await Promise.all([
+    // Everything that needs only the engagement id, in one round: on a phone each round trip
+    // can take most of a second, so the number of rounds is what the client feels.
+    const [assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, lastRead,
+      requestFiles, parties, sheets, models, owners, invoices, billing] = await Promise.all([
       store.assignmentsFor(id), store.publications(id), store.engagementFiles(id), store.milestones(id), store.decisions(id),
       store.actionItems(id), store.deliverables(id), store.messages(id), store.agreement(id).catch(() => null), store.activity(id, 120),
       store.roster(id).catch(() => null), store.messages(id, "team"), store.teamFiles(id).catch(() => []), store.teamLastRead(id, me()).catch(() => null),
-    ]);
-    const [requestFiles, parties, sheets, models, owners] = await Promise.all([
       store.requestFiles(id).catch(() => []), store.requestParties(id).catch(() => []), store.sovSheets(id).catch(() => []), store.pmModels(id).catch(() => []), store.omModels(id).catch(() => []),
+      store.invoices(id).catch(() => []), store.billingProfile(me()).catch(() => null),
     ]);
-    const [invoices, billing] = await Promise.all([store.invoices(id).catch(() => []), store.billingProfile(me()).catch(() => null)]);
     room = { assignments, pubs, files, milestones, decisions, actions, deliverables, messages, agreement, activity, roster, teamMessages, teamFiles, teamLastRead: lastRead, requestFiles, parties, sheets, models, owners, invoices, billing };
     await loadPricing(room);
   }
@@ -124,17 +124,17 @@ async function loadRoom() {
 }
 
 /** Lines (and, owner side, the budget) for each pricing sheet, for the Home summary. */
+/** The figures that depend on the lists loaded first: the model summaries and the pricing lines, together in one round. */
 async function loadPricing(r) {
-  r.modelSummary = r.models?.length ? await modelSummary(r.models[0].id).catch(() => null) : null;
-  r.ownerSummary = r.owners?.length ? await ownerSummary(r.owners[0].id).catch(() => null) : null;
-  r.sheetLines = new Map();
-  r.budget = null;
-  if (!r.sheets.length) return;
-  const [lineSets, budget] = await Promise.all([
-    Promise.all(r.sheets.map((s) => store.sovLines(s.id).catch(() => []))),
-    isMember() ? [] : store.sovBudget(eng.id).catch(() => []),
+  const [ms, os, lineSets, budget] = await Promise.all([
+    r.models?.length ? modelSummary(r.models[0]).catch(() => null) : null,
+    r.owners?.length ? ownerSummary(r.owners[0], r.models || []).catch(() => null) : null,
+    Promise.all((r.sheets || []).map((s) => store.sovLines(s.id).catch(() => []))),
+    r.sheets?.length && !isMember() ? store.sovBudget(eng.id).catch(() => []) : [],
   ]);
-  r.sheets.forEach((s, i) => r.sheetLines.set(s.id, lineSets[i]));
+  r.modelSummary = ms;
+  r.ownerSummary = os;
+  r.sheetLines = new Map((r.sheets || []).map((s, i) => [s.id, lineSets[i]]));
   r.budget = budget.length ? new Map(budget.map((b) => [b.line_id, b])) : null;
 }
 

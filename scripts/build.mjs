@@ -6,6 +6,9 @@
 //   <!-- problems-featured:start --> … <!-- problems-featured:end -->   featured rows only
 // It also stamps every stylesheet and script link with ?v=<content hash>, so a
 // deploy reaches visitors at once instead of waiting out their browser cache.
+// For pages that load a module script, it also lists every module that script imports (and the
+// Supabase client, on portal pages) as preload hints in <!-- preload:start --> … <!-- preload:end -->,
+// so the browser fetches them all at once instead of discovering them one import at a time.
 // Run after editing a partial or the problem data:   node scripts/build.mjs
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
@@ -85,6 +88,16 @@ function version(path) {
   if (!hashes.has(path)) hashes.set(path, createHash("sha256").update(readFileSync(join(root, path))).digest("hex").slice(0, 10));
   return hashes.get(path);
 }
+/** Every module a script imports, directly or not (static `import … from "./x.js"` only), as repo paths. */
+function moduleGraph(entry, seen = new Set()) {
+  const src = readFileSync(join(root, entry), "utf8");
+  for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)\s[^;'"]*?from\s*["'](\.{1,2}\/[^"']+)["']|(?:^|\n)\s*import\s*["'](\.{1,2}\/[^"']+)["']/g)) {
+    const dep = join(dirname(entry), m[1] || m[2]).split(sep).join("/");
+    if (!seen.has(dep)) { seen.add(dep); moduleGraph(dep, seen); }
+  }
+  return seen;
+}
+const PRELOAD = /\n?[ \t]*<!-- preload:start -->[\s\S]*?<!-- preload:end -->/;
 const ASSET_LINK = /((?:href|src)=")((?:\.\.\/|\/)*assets\/(?:css|js)\/[\w\/.-]+\.(?:css|js))(?:\?v=[a-f0-9]+)?"/g;
 
 for (const file of pages(root)) {
@@ -110,6 +123,17 @@ for (const file of pages(root)) {
     });
     html = html.replace(re, () => `<!-- ${name}:start -->\n${out}\n<!-- ${name}:end -->`);
   }
+  // Preload hints use the same unversioned URLs the imports resolve to, so take the old block
+  // out before stamping versions and put the new one back after.
+  html = html.replace(PRELOAD, "");
   html = html.replace(ASSET_LINK, (m, attr, path) => `${attr}${path}?v=${version(path.replace(/^(\.\.\/|\/)+/, ""))}"`);
+  const entry = html.match(/<script type="module" src="((?:\.\.\/|\/)*)(assets\/js\/[\w\/.-]+\.js)\?v=[a-f0-9]+"><\/script>/);
+  if (entry) {
+    const deps = [...moduleGraph(entry[2])].sort();
+    const links = deps.map((d) => `  <link rel="modulepreload" href="${entry[1]}${d}">`);
+    // The Supabase client (218 KB) only where it is needed as the page opens: the portal and proposal pages.
+    if ((rel.startsWith("portal/") || rel.startsWith("for/")) && deps.includes("assets/js/portal/store.js")) links.push(`  <link rel="preload" as="script" href="${entry[1]}assets/vendor/supabase.min.js">`);
+    if (links.length) html = html.replace(entry[0], `<!-- preload:start -->\n${links.join("\n")}\n  <!-- preload:end -->\n  ${entry[0]}`);
+  }
   if (html !== original) { writeFileSync(file, html); console.log("built", rel); }
 }

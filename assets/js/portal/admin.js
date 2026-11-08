@@ -143,20 +143,25 @@ async function viewClients() {
 }
 
 async function viewEngagement(id, tab = "today") {
-  const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions, messages, actions, deliverables, roster, teamMessages, teamFiles] = await Promise.all([
+  // Round 1: everything that needs only the engagement id. On a phone each round trip can take
+  // most of a second, so the page waits on as few rounds as possible.
+  const [eng, assignments, drafts, pubs, questionnaires, activity, milestones, decisions, messages, actions, deliverables, roster, teamMessages, teamFiles,
+    requestFiles, sheets, budgetRows, models, owners, inbox, invoices] = await Promise.all([
     store.engagement(id), store.assignmentsFor(id), store.drafts(id), store.publications(id), store.questionnaires(), store.activity(id),
     store.milestones(id), store.decisions(id), store.messages(id), store.actionItems(id), store.deliverables(id),
     store.roster(id).catch(() => null), store.messages(id, "team"), store.teamFiles(id).catch(() => []),
+    store.requestFiles(id).catch(() => []), store.sovSheets(id).catch(() => []), store.sovBudget(id).catch(() => []),
+    store.pmModels(id).catch(() => []), store.omModels(id).catch(() => []), store.inboxDocuments(id).catch(() => []), store.invoices(id).catch(() => []),
   ]);
-  const [requestFiles, sheets, budgetRows] = await Promise.all([store.requestFiles(id).catch(() => []), store.sovSheets(id).catch(() => []), store.sovBudget(id).catch(() => [])]);
-  const sheetLines = await Promise.all(sheets.map((x) => store.sovLines(x.id).catch(() => [])));
-  const models = await store.pmModels(id).catch(() => []);
-  const inbox = await store.inboxDocuments(id).catch(() => []);
   window.__inbox = inbox;
-  const summaries = await Promise.all(models.map((m) => modelSummary(m.id).catch(() => null)));
-  const owners = await store.omModels(id).catch(() => []);
-  const [invoices, billing] = await Promise.all([store.invoices(id).catch(() => []), tab === "billing" ? store.billingProfile(eng.client_id).catch(() => null) : null]);
-  const ownerSums = await Promise.all(owners.map((m) => ownerSummary(m.id).catch(() => null)));
+  // Round 2, only for the tab that shows it: model figures and pricing lines (Models), the billing address (Billing).
+  const onModels = tab === "models";
+  const [sheetLines, summaries, ownerSums, billing] = await Promise.all([
+    onModels ? Promise.all(sheets.map((x) => store.sovLines(x.id).catch(() => []))) : [],
+    onModels ? Promise.all(models.map((m) => modelSummary(m).catch(() => null))) : [],
+    onModels ? Promise.all(owners.map((m) => ownerSummary(m, models).catch(() => null))) : [],
+    tab === "billing" ? store.billingProfile(eng.client_id).catch(() => null) : null,
+  ]);
   const budget = budgetRows.length ? new Map(budgetRows.map((b) => [b.line_id, b])) : null;
   window.__team = { roster, teamFiles };
   const members = roster?.members || [];
