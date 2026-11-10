@@ -279,3 +279,8 @@ figure.figure figcaption b { color: var(--navy-ink); }
 .keep { break-inside: avoid; }
 .mt0 { margin-top: 0 !important; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0.3in; }
+
+/* ---------- Unbranded documents (doc({ brand: false })): the issuer's name in place of the logo ---------- */
+.issuer-mark { font: 500 11pt/1 var(--display); letter-spacing: 0.08em; color: var(--wordmark); text-transform: uppercase; white-space: nowrap; }
+.issuer-mark.is-cover { font-size: 17pt; letter-spacing: 0.12em; }
+.is-unbranded .chapter-head__divider span { margin-left: 0; }
