@@ -34,8 +34,14 @@ export const two = (n) => String(n).padStart(2, "0");
  * @param {string[]} d.body          chapters, in order
  * @param {string} [d.disclaimer]    small print on the closing page
  * @param {string} [d.title_meta]    PDF title
+ * @param {boolean} [d.brand]        false: no Sypher logo, emblem, ribbon or byline (a client's own document in the house style)
+ * @param {string} [d.issuer]        unbranded: whose document it is, shown where the logo would be ("Ernie's Café")
+ * @param {string} [d.issuerLine]    unbranded: a line under the issuer on the closing page (name, address, phone)
+ * @param {string} [d.preparedFor]   unbranded: the reader, shown on the cover, in the running header and on the closing page
+ * @param {string} [d.preparedForOrg] unbranded: the reader's organization
  */
 export function doc(d) {
+  if (d.brand === false) return unbranded(d);
   const author = d.author ?? "Michael Furth";
   const stats = d.coverStats ?? [];
   return `<!doctype html>
@@ -86,6 +92,77 @@ ${(d.contents === false ? d.body.slice(1) : d.body).join("\n")}
 </section>
 </body>
 </html>`;
+}
+
+/**
+ * The same document in the house style with no Sypher branding: the issuer's name where the logo
+ * would be, no emblem, ribbon or byline, and "Prepared for" the reader in the running header.
+ */
+function unbranded(d) {
+  const stats = d.coverStats ?? [];
+  const label = d.preparedFor ? `Prepared for ${d.preparedFor}` : "";
+  const mark = (extra = "") => `<span class="${cls("issuer-mark", extra)}">${d.issuer ?? d.short}</span>`;
+  const run = `<div class="running-logo">${mark()}</div>\n<div class="running-wordmark">${mark()}</div>`;
+  const first = d.contents === false ? withRunning(d.body[0], run) : `<section class="contents">
+  ${run}
+  <p class="kicker">${d.short} · ${d.docType}</p>
+  <h1>Contents</h1>
+  <table class="toc">
+    <thead><tr><th></th><th>Chapter</th><th>Page</th></tr></thead>
+    <tbody>
+      ${d.toc.map((c) => `<tr><td class="n">${c.num}</td><td><a href="#${c.id}"><div class="t">${c.title}</div>${c.desc ? `<div class="d">${c.desc}</div>` : ""}</a></td><td class="p"><a href="#${c.id}"></a></td></tr>`).join("")}
+    </tbody>
+  </table>
+</section>`;
+  const body = (d.contents === false ? d.body.slice(1) : d.body).join("\n");
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${attr(d.titleMeta ?? d.title.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim())}</title>
+<link rel="stylesheet" href="document.css">
+<style>
+@page { @top-right { content: "${cssText(label)}"; } @bottom-center { content: "${cssText(d.short)} · " counter(page); } @bottom-right { content: "${cssText(label)}"; } }
+</style>
+</head>
+<body class="is-unbranded">
+<section class="cover">
+  <div class="cover__logo">${mark("is-cover")}</div>
+  <div class="cover__type"><b>${d.docType}</b><span>${d.date}</span></div>
+  <div class="${cls("cover__main", d.titleSize === "xlong" && "is-xlong")}">
+    <p class="cover__kicker">${d.kicker}</p>
+    <h1 class="${cls("cover__title", d.titleSize === "xlong" ? "is-xlong" : d.longTitle && "is-long")}">${d.title}</h1>
+    ${d.subtitle ? `<p class="cover__subtitle">${d.subtitle}</p>` : ""}
+    <hr class="cover__rule">
+    ${d.lede ? `<p class="cover__lede">${d.lede}</p>` : ""}
+  </div>
+  <div class="cover__band">
+    <div class="${cls("cover__stats", stats.length === 4 && "is-4")}">
+      ${stats.map((s) => `<div class="cover__stat"><b>${s.value}</b><span>${s.label}</span></div>`).join("")}
+    </div>
+    <div class="cover__by">
+      <span class="who">${d.preparedFor ? `Prepared for <em>${d.preparedFor}</em>${d.preparedForOrg ? `<small>, ${d.preparedForOrg}</small>` : ""}` : ""}</span>
+      <span class="tag">${d.tagline ?? ""}</span>
+    </div>
+  </div>
+</section>
+
+${first}
+${body}
+
+<section class="closing">
+  <hr class="closing__rule">
+  ${d.preparedFor ? `<div class="closing__label">Prepared for</div><div class="closing__name">${d.preparedFor}</div>${d.preparedForOrg ? `<div class="closing__org">${d.preparedForOrg}</div>` : ""}` : ""}
+  <div class="closing__label" style="margin-top:0.4in">Submitted by</div>
+  <div class="closing__name">${d.issuer ?? d.short}</div>
+  ${d.issuerLine ? `<div class="closing__org">${d.issuerLine}</div>` : ""}
+  ${d.tagline ? `<div class="closing__tag">${d.tagline}</div>` : ""}
+  ${d.disclaimer ? `<p class="closing__disclaimer">${d.disclaimer}</p>` : ""}
+</section>
+</body>
+</html>`;
+  // Chapters are built before doc() runs, so their emblem divider is taken out here.
+  return html.replace(/<div class="chapter-head__divider"><img src="img\/emblem\.webp" alt="">/g, '<div class="chapter-head__divider">');
 }
 
 /** Header and footer content. It must sit inside the first page that has them. */
